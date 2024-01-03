@@ -19,4 +19,5 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
     - run: npm ci
-    - run: pm2 restart server
+    - run: cp ~/igress/.env ~/actions-runner/_work/igress/igress/.env
+    - run: pm2 restart igress
