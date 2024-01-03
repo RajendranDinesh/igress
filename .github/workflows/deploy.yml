@@ -18,6 +18,7 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
+    - run: export PATH=$PATH:/home/ubuntu/.nvm/versions/node/v18.14.2/bin
     - run: npm ci
     - run: cp ~/igress/.env ~/actions-runner/_work/igress/igress/.env
     - run: pm2 restart igress
