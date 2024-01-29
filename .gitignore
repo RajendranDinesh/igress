@@ -1,3 +1,4 @@
 /node_modules/
 .env
 models.sql
+/src/utils/app.log
