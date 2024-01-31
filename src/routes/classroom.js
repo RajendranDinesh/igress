@@ -64,13 +64,24 @@ router.get('/id/:id', authenticate(["staff", "admin"]), async (req, res) => {
     }
 });
 
-// GET /classroom/user/:userId - Get classrooms created by the specific user
+// GET /classroom/user/:userId - Get classrooms associated to a user
 router.get('/user/:userId', authenticate(["staff", "admin"]), async (req, res) => {
     try {
-        const { userId } = req.params;
-        const selectSql = `SELECT classroom_id, name, description, created_at, updated_at FROM classrooms WHERE created_by = ?`;
+        let { userId } = req.params;
 
-        const [classrooms] = await promisePool.execute(selectSql, [userId]);
+        if (userId === "me") {
+            userId = req.userData.userId;
+        }
+
+        const selectSql = `
+            SELECT c.classroom_id, c.name, c.description, c.created_at, c.updated_at 
+            FROM classrooms c
+            LEFT JOIN classroom_staff cs ON c.classroom_id = cs.classroom_id
+            WHERE c.created_by = ? OR cs.staff_id = ?
+            GROUP BY c.classroom_id
+        `;
+
+        const [classrooms] = await promisePool.execute(selectSql, [userId, userId]);
 
         res.send(classrooms);
     } catch (error) {
