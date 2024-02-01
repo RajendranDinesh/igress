@@ -38,12 +38,25 @@ router.post('/login', async (req, res) => {
             return res.status(401).send({ message: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
         res.send({ message: 'Logged in successfully', token, userRole: user.role });
     } catch (error) {
         logger.error(`[Auth] ${error}`)
         res.status(500).send({ message: 'Error logging in', error });
+    }
+});
+
+router.delete('/remove/:emailId', async (req, res) => {
+    try {
+        const { emailId } = req.params;
+
+        await promisePool.query('DELETE FROM users WHERE email = ?', [emailId]);
+
+        res.send({ message: 'User deleted' });
+    } catch (error) {
+        logger.error(`[Auth] ${error}`)
+        res.status(500).send({ message: 'Error deleting user', error });
     }
 });
 
