@@ -7,7 +7,7 @@ import authenticate from '../utils/auth.js';
 const router = express.Router();
 const logger = new Logger();
 
-// POST /classrooms - Create a new classroom
+// POST /classrooms/create - Create a new classroom
 router.post('/create', authenticate(['staff', 'admin']), async (req, res) => {
     try {
         const { name, description = null } = req.body;
@@ -20,7 +20,7 @@ router.post('/create', authenticate(['staff', 'admin']), async (req, res) => {
 
         res.status(201).send({ message: 'Classroom created', classroomId: result.insertId });
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -35,7 +35,7 @@ router.get('/all', authenticate(['staff','admin']), async (req, res) => {
         const [classrooms] = await promisePool.query(selectSql);
         res.send(classrooms);
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -124,7 +124,7 @@ router.put('/:id', authenticate(["staff", "admin"]), async (req, res) => {
 
         res.send({ message: 'Classroom updated' });
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -142,7 +142,7 @@ router.delete('/:id', authenticate(["staff", "admin"]), async (req, res) => {
 
         res.send({ message: 'Classroom deleted' });
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -162,7 +162,7 @@ router.get('/:classroomId/staff', authenticate(["staff", "admin"]), async (req, 
 
         res.status(200).send(staffMembers);
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -194,7 +194,7 @@ router.post('/:classroomId/staff', authenticate(["staff", "admin"]), async (req,
         if (error.code == "ER_DUP_ENTRY") {
             res.status(403).send({ error: "Staff is already a part of the classroom" });
         } else {
-            logger.error(error);
+            logger.error(`[CLASSROOM] ${error}`);
             res.status(500).send({ error: 'Internal Server Error' });
         }
     }
@@ -214,7 +214,7 @@ router.delete('/:classroomId/staff/:staffId', authenticate(["staff", "admin"]), 
 
         res.send({ message: 'Staff removed from classroom' });
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -234,7 +234,7 @@ router.get('/:classroomId/student', authenticate(["staff", "admin"]), async (req
 
         res.status(200).send(students);
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
@@ -262,7 +262,7 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
                     addedStudents++;
                 } catch (error) {
                     if (error.code !== "ER_DUP_ENTRY") {
-                        logger.error(`Error adding student with email ${email}: ${error}`);
+                        logger.error(`[CLASSROOM] Error adding student with email ${email}: ${error}`);
                     }
                 }
             }
@@ -274,14 +274,14 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
 
         res.status(201).send({ message: `${addedStudents} students added to classroom` });
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });
 
 
 // DELETE /classrooms/:classroomId/students/:studentId - Remove a student from a classroom
-router.delete('/:classroomId/student/:studentId', authenticate, async (req, res) => {
+router.delete('/:classroomId/student/:studentId', authenticate(["staff", "admin"]), async (req, res) => {
     try {
         const { classroomId, studentId } = req.params;
 
@@ -294,7 +294,7 @@ router.delete('/:classroomId/student/:studentId', authenticate, async (req, res)
 
         res.send({ message: 'Student removed from classroom' });
     } catch (error) {
-        logger.error(error);
+        logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
 });

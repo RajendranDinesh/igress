@@ -5,6 +5,7 @@ import authRouter from './routes/auth.js';
 import classroomRouter from './routes/classroom.js';
 import questionRouter from './routes/questions.js';
 import submissionRouter from './routes/submission.js';
+import testRouter from './routes/test.js';
 
 const app = express();
 
@@ -21,5 +22,6 @@ app.use('/api/auth', authRouter);
 app.use('/api/classroom', classroomRouter);
 app.use('/api/question', questionRouter);
 app.use('/api/submission', submissionRouter);
+app.use('/api/test', testRouter);
 
 export default app;
