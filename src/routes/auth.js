@@ -47,4 +47,17 @@ router.post('/login', async (req, res) => {
     }
 });
 
+router.delete('/remove/:emailId', async (req, res) => {
+    try {
+        const { emailId } = req.params;
+
+        await promisePool.query('DELETE FROM users WHERE email = ?', [emailId]);
+
+        res.send({ message: 'User deleted' });
+    } catch (error) {
+        logger.error(`[Auth] ${error}`)
+        res.status(500).send({ message: 'Error deleting user', error });
+    }
+});
+
 export default router;
