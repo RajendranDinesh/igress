@@ -15,6 +15,10 @@ const authenticate = (allowedRoles = ['student']) => {
 
             next();
         } catch (error) {
+            if (error.name === 'TokenExpiredError') {
+                return res.status(498).send({ message: 'Token expired' });
+            }
+
             return res.status(401).send({ message: 'Authentication failed' });
         }
     }

@@ -45,6 +45,11 @@ router.put('/:testId', authenticate(['staff', 'admin']), async (req, res) => {
         }
 
         if (duration_in_minutes) {
+
+            if (isNaN(duration_in_minutes)) {
+                return res.status(400).send({ error: 'Duration must be a number' });
+            }
+
             updateFields.push('duration_in_minutes = ?');
             queryParams.push(duration_in_minutes);
         }
@@ -104,7 +109,7 @@ router.get('/:testId', authenticate(), async (req, res) => {
 });
 
 // GET /test - Get all tests
-router.get('/', authenticate(), async (req, res) => {
+router.get('/', authenticate(["admin"]), async (req, res) => {
     try {
         const selectSql = `SELECT * FROM tests`;
         const [rows] = await promisePool.execute(selectSql);
