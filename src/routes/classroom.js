@@ -153,10 +153,13 @@ router.get('/:classroomId/staff', authenticate(["staff", "admin"]), async (req, 
         const { classroomId } = req.params;
 
         const selectSql = `
-            SELECT u.user_id, u.roll_no, u.email, u.role 
-            FROM users u 
-            INNER JOIN classroom_staff cs ON u.user_id = cs.staff_id 
-            WHERE cs.classroom_id = ? AND u.role = 'staff'`;
+            SELECT u.user_id, u.roll_no, u.email, r.role_name AS role
+            FROM users u
+            INNER JOIN classroom_staff cs ON u.user_id = cs.staff_id
+            INNER JOIN user_roles ur ON u.user_id = ur.user_id
+            INNER JOIN roles r ON ur.role_id = r.role_id
+            WHERE cs.classroom_id = ? AND r.role_name = 'staff';
+        `;
 
         const [staffMembers] = await promisePool.query(selectSql, [classroomId]);
 
@@ -225,10 +228,13 @@ router.get('/:classroomId/student', authenticate(["staff", "admin"]), async (req
         const { classroomId } = req.params;
 
         const selectSql = `
-            SELECT u.user_id, u.roll_no, u.email, u.role 
-            FROM users u 
-            INNER JOIN classroom_student cs ON u.user_id = cs.student_id 
-            WHERE cs.classroom_id = ? AND u.role = 'student'`;
+        SELECT u.user_id, u.roll_no, u.email
+        FROM users u
+        INNER JOIN classroom_student cs ON u.user_id = cs.student_id
+        INNER JOIN user_roles ur ON u.user_id = ur.user_id
+        INNER JOIN roles r ON ur.role_id = r.role_id
+        WHERE cs.classroom_id = ? AND r.role_name = 'student';
+        `;
 
         const [students] = await promisePool.query(selectSql, [classroomId]);
 
@@ -241,6 +247,18 @@ router.get('/:classroomId/student', authenticate(["staff", "admin"]), async (req
 
 // POST /classrooms/:classroomId/students - Add students to a classroom
 router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (req, res) => {
+
+    async function addStudentToClassroomDB(classroomId, studentId) {
+        const insertSql = `INSERT INTO classroom_student (classroom_id, student_id) VALUES (?, ?)`;
+        try {
+            await promisePool.execute(insertSql, [classroomId, studentId]);
+        } catch (error) {
+            if (error.code !== "ER_DUP_ENTRY") {
+                logger.error(`[CLASSROOM] Error adding student: ${error}`);
+            }
+        }
+    }
+
     try {
         const { classroomId } = req.params;
         const { studentEmails } = req.body;
@@ -251,19 +269,46 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
 
         let addedStudents = 0;
         for (let email of studentEmails) {
-            const userSql = `SELECT user_id FROM users WHERE email = ? AND role = 'student'`;
-            const [users] = await promisePool.execute(userSql, [email]);
+            const userSql = `
+            SELECT u.user_id
+            FROM users u
+            LEFT JOIN classroom_student cs ON u.user_id = cs.student_id AND cs.classroom_id = ?
+            INNER JOIN user_roles ur ON u.user_id = ur.user_id
+            INNER JOIN roles r ON ur.role_id = r.role_id AND r.role_name = 'student'
+            WHERE u.email = ? AND cs.student_id IS NULL;         
+            `;
+            const [users] = await promisePool.execute(userSql, [classroomId, email]);
 
             if (users.length > 0) {
                 const studentId = users[0].user_id;
-                const insertSql = `INSERT INTO classroom_student (classroom_id, student_id) VALUES (?, ?)`;
+                await addStudentToClassroomDB(classroomId, studentId);
+                addedStudents++;
+            } else {
+                const insertUserSql = `
+                    INSERT INTO users (email, password_hash, roll_no)
+                    VALUES (?, '', 'DUMMY')`;
                 try {
-                    await promisePool.execute(insertSql, [classroomId, studentId]);
+                    const [userResult] = await promisePool.execute(insertUserSql, [email]);
+                    const studentId = userResult.insertId;
+                    
+                    const [studentRoleIdResult] = await promisePool.execute("SELECT role_id FROM roles WHERE role_name = 'student'");
+                    const studentRoleId = studentRoleIdResult[0].role_id;
+
+                    const insertUserRoleSql = `
+                        INSERT INTO user_roles (user_id, role_id)
+                        VALUES (?, ?)`;
+
+                    await promisePool.execute(insertUserRoleSql, [studentId, studentRoleId]);
+
+                    await addStudentToClassroomDB(classroomId, studentId);
+
                     addedStudents++;
+
+                    sendMail(email, "Invitation to Join Classroom", 
+                        "You have been added to a classroom. Please sign up to access your class.",
+                        "<p>You have been added to a classroom. Please <a href='SIGN_UP_LINK'>sign up</a> to access your class.</p>");
                 } catch (error) {
-                    if (error.code !== "ER_DUP_ENTRY") {
-                        logger.error(`[CLASSROOM] Error adding student with email ${email}: ${error}`);
-                    }
+                    logger.error(`[CLASSROOM] Error creating user or adding student with email ${email}: ${error}`);
                 }
             }
         }
