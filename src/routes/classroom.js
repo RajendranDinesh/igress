@@ -1,4 +1,5 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
 
 import { Logger } from '../utils/logger.js';
 import promisePool from '../config/db.js';
@@ -153,7 +154,7 @@ router.get('/:classroomId/staff', authenticate(["staff", "admin"]), async (req, 
         const { classroomId } = req.params;
 
         const selectSql = `
-            SELECT u.user_id, u.roll_no, u.email, r.role_name AS role
+            SELECT u.user_id, u.roll_no, u.email, u.user_name
             FROM users u
             INNER JOIN classroom_staff cs ON u.user_id = cs.staff_id
             INNER JOIN user_roles ur ON u.user_id = ur.user_id
@@ -228,7 +229,7 @@ router.get('/:classroomId/student', authenticate(["staff", "admin"]), async (req
         const { classroomId } = req.params;
 
         const selectSql = `
-        SELECT u.user_id, u.roll_no, u.email
+        SELECT u.user_id, u.roll_no, u.email, u.user_name
         FROM users u
         INNER JOIN classroom_student cs ON u.user_id = cs.student_id
         INNER JOIN user_roles ur ON u.user_id = ur.user_id
@@ -259,69 +260,127 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
         }
     }
 
+    async function getStudentUserId(email) {
+        const checkSql = `
+        SELECT u.user_id, u.email
+        FROM users u
+        JOIN user_roles ur ON u.user_id = ur.user_id
+        JOIN roles r ON ur.role_id = r.role_id
+        WHERE r.role_name = 'student'
+        AND u.email = ?;
+        `
+
+        const [users] = await promisePool.execute(checkSql, [email]);
+
+        if (users.length === 0) {
+            return false;
+        }
+
+        return users[0];
+    }
+
+    async function isStudentInClassroom(classroomId, studentId) {
+        const checkSql = `SELECT * FROM classroom_student WHERE classroom_id = ? AND student_id = ?`;
+        const [result] = await promisePool.execute(checkSql, [classroomId, studentId]);
+
+        return result.length > 0;
+    }
+
+    async function createUser(roll_no, userName, email, passwordHash, roleName) {
+        const insertUserSql = `INSERT INTO users (roll_no, user_name, email, password_hash) VALUES (?, ?, ?, ?)`;
+        const [userResult] = await promisePool.execute(insertUserSql, [roll_no, userName, email, passwordHash]);
+        const userId = userResult.insertId;
+
+        const selectRoleSql = `SELECT role_id FROM roles WHERE role_name = ?`;
+        const [roleResult] = await promisePool.execute(selectRoleSql, [roleName]);
+        if (roleResult.length === 0) {
+            throw new Error(`Role ${roleName} not found.`);
+        }
+        const roleId = roleResult[0].role_id;
+
+        const insertUserRoleSql = `INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`;
+        await promisePool.execute(insertUserRoleSql, [userId, roleId]);
+    
+        return userId;
+    }
+
     try {
         const { classroomId } = req.params;
-        const { studentEmails } = req.body;
-
-        if (!studentEmails || !Array.isArray(studentEmails) || studentEmails.length === 0) {
-            return res.status(400).send({ error: 'Student\'s email(s) is/are required' });
+        const { students } = req.body; // Changed from studentEmails to students
+    
+        if (!students || !Array.isArray(students) || students.length === 0) {
+            return res.status(400).send({ error: 'Student details are required' });
         }
-
+    
         let addedStudents = 0;
-        for (let email of studentEmails) {
-            const userSql = `
-            SELECT u.user_id
-            FROM users u
-            LEFT JOIN classroom_student cs ON u.user_id = cs.student_id AND cs.classroom_id = ?
-            INNER JOIN user_roles ur ON u.user_id = ur.user_id
-            INNER JOIN roles r ON ur.role_id = r.role_id AND r.role_name = 'student'
-            WHERE u.email = ? AND cs.student_id IS NULL;         
-            `;
-            const [users] = await promisePool.execute(userSql, [classroomId, email]);
-
-            if (users.length > 0) {
-                const studentId = users[0].user_id;
-                await addStudentToClassroomDB(classroomId, studentId);
-                addedStudents++;
-            } else {
-                const insertUserSql = `
-                    INSERT INTO users (email, password_hash, roll_no)
-                    VALUES (?, '', 'DUMMY')`;
-                try {
-                    const [userResult] = await promisePool.execute(insertUserSql, [email]);
-                    const studentId = userResult.insertId;
+        let createdAccounts = 0;
+        let failedToAdd = [];
+        let existingUsersAdded = 0;
+    
+        for (let student of students) {
+            const { email, roll_no, userName } = student;
+    
+            if (!email) {
+                failedToAdd.push({ roll_no, reason: 'Missing email' });
+                continue;
+            } else if (!roll_no) {
+                failedToAdd.push({ email, reason: 'Missing roll number' });
+                continue;
+            } else if (!userName) {
+                failedToAdd.push({ email, roll_no, reason: 'Missing user name' });
+                continue;
+            }
+    
+            try {
+                // Check if the user already exists
+                const userExists = await getStudentUserId(email);
+                
+                if (userExists) {
+                    // Check if already added to classroom
+                    const alreadyAdded = await isStudentInClassroom(classroomId, userExists.userId);
                     
-                    const [studentRoleIdResult] = await promisePool.execute("SELECT role_id FROM roles WHERE role_name = 'student'");
-                    const studentRoleId = studentRoleIdResult[0].role_id;
-
-                    const insertUserRoleSql = `
-                        INSERT INTO user_roles (user_id, role_id)
-                        VALUES (?, ?)`;
-
-                    await promisePool.execute(insertUserRoleSql, [studentId, studentRoleId]);
-
-                    await addStudentToClassroomDB(classroomId, studentId);
-
-                    addedStudents++;
-
-                    sendMail(email, "Invitation to Join Classroom", 
-                        "You have been added to a classroom. Please sign up to access your class.",
-                        "<p>You have been added to a classroom. Please <a href='SIGN_UP_LINK'>sign up</a> to access your class.</p>");
-                } catch (error) {
-                    logger.error(`[CLASSROOM] Error creating user or adding student with email ${email}: ${error}`);
+                    if (!alreadyAdded) {
+                        // Add existing user to classroom
+                        await addStudentToClassroomDB(classroomId, userExists.userId);
+                        existingUsersAdded++;
+                    } else {
+                        // User already in classroom, add to failedToAdd with reason
+                        failedToAdd.push({ email, roll_no, reason: 'User already added to classroom' });
+                    }
+                } else {
+                    // Create user and add to classroom
+                    const passwordHash = await bcrypt.hash(email, 8);
+                    const userId = await createUser(roll_no, userName, email, passwordHash, "student");
+                    await addStudentToClassroomDB(classroomId, userId);
+                    createdAccounts++;
                 }
+    
+                addedStudents++;
+            } catch (error) {
+                // Log error and add to failedToAdd list
+                logger.error(`[CLASSROOM] Error processing student with roll number ${roll_no} (${email}): ${error}`);
+                failedToAdd.push({ email, roll_no, reason: 'Failed to add to database' });
             }
         }
-
-        if (addedStudents === 0) {
-            return res.status(404).send({ error: 'No valid students found or all students are already added' });
+    
+        // Prepare detailed response
+        let responseMessage = `${addedStudents} students processed. ${createdAccounts} new accounts created. ${existingUsersAdded} existing users added to classroom.`;
+        if (failedToAdd.length > 0) {
+            responseMessage += ` Some students could not be added.`;
         }
-
-        res.status(201).send({ message: `${addedStudents} students added to classroom` });
+    
+        res.status(201).send({
+            message: responseMessage,
+            details: {
+                createdAccounts,
+                existingUsersAdded,
+                failedToAdd
+            }
+        });
     } catch (error) {
         logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
-    }
+    }    
 });
 
 
