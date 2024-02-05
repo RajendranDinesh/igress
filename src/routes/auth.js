@@ -11,12 +11,17 @@ const router = express.Router();
 
 router.post('/register', async (req, res) => {
     try {
-        const { roll_no, email, password, role } = req.body;
+        const { roll_no, userName, email, password, role } = req.body;
+
+        if (!roll_no || !userName || !email || !password || !role) {
+            return res.status(400).send({ message: 'Missing fields' });
+        }
+
         const hashedPassword = await bcrypt.hash(password, 8);
 
         const [result] = await promisePool.query(
-            'INSERT INTO users (roll_no, email, password_hash, role) VALUES (?, ?, ?, ?)',
-            [roll_no, email, hashedPassword, role]
+            'INSERT INTO users (roll_no, user_name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
+            [roll_no, userName, email, hashedPassword, role]
         );
 
         res.status(201).send({ message: 'User registered', userId: result.insertId });
