@@ -318,7 +318,7 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
         let existingUsersAdded = 0;
     
         for (let student of students) {
-            const { email, roll_no, userName } = student;
+            const { email, roll_no, user_name } = student;
     
             if (!email) {
                 failedToAdd.push({ roll_no, reason: 'Missing email' });
@@ -326,7 +326,7 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
             } else if (!roll_no) {
                 failedToAdd.push({ email, reason: 'Missing roll number' });
                 continue;
-            } else if (!userName) {
+            } else if (!user_name) {
                 failedToAdd.push({ email, roll_no, reason: 'Missing user name' });
                 continue;
             }
@@ -350,7 +350,7 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
                 } else {
                     // Create user and add to classroom
                     const passwordHash = await bcrypt.hash(email, 8);
-                    const userId = await createUser(roll_no, userName, email, passwordHash, "student");
+                    const userId = await createUser(roll_no, user_name, email, passwordHash, "student");
                     await addStudentToClassroomDB(classroomId, userId);
                     createdAccounts++;
                 }

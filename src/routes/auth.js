@@ -36,16 +36,25 @@ router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const [users] = await promisePool.query('SELECT * FROM users WHERE email = ?', [email]);
+        const [users] = await promisePool.query(`
+            SELECT u.user_id, u.password_hash, r.role_name
+            FROM users u
+            JOIN user_roles ur ON u.user_id = ur.user_id
+            JOIN roles r ON ur.role_id = r.role_id
+            WHERE u.email = ?;
+        `, [email])
+
+        const userRoles = users.map(user => user.role_name);
+
         const user = users[0];
 
         if (!user || !await bcrypt.compare(password, user.password_hash)) {
             return res.status(401).send({ message: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ userId: user.user_id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        const token = jwt.sign({ userId: user.user_id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-        res.send({ message: 'Logged in successfully', token, userRole: user.role });
+        res.send({ message: 'Logged in successfully', token, userRoles: userRoles });
     } catch (error) {
         logger.error(`[Auth] ${error}`)
         res.status(500).send({ message: 'Error logging in', error });
