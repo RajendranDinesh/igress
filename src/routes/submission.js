@@ -4,10 +4,17 @@ import { Logger } from '../utils/logger.js';
 
 import { Request, SetHeader } from '../config/networking.js';
 
+import promisePool from '../config/db.js';
+import authenticate from '../utils/auth.js';
+
 const router = express.Router();
 const logger = new Logger();
 
 router.get('/', async (req, res) => {
+
+    // const submission_id = req.body.submission_id;
+    const submission_id = 3;
+
     SetHeader('content-type', 'application/json');
 
     // Comment these if using local server
@@ -33,16 +40,47 @@ router.get('/', async (req, res) => {
             params
         );
 
-        const { submissions } = response.data;
+        const insertSql = `
+            INSERT INTO submission_results (submission_id, token, status, execution_time, memory_usage, progress)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+            status = VALUES(status),
+            execution_time = VALUES(execution_time),
+            memory_usage = VALUES(memory_usage),
+            progress = CASE
+                            WHEN VALUES(status) = 'accepted' THEN 'accepted'
+                            WHEN progress = 'progress' THEN 'queued'
+                            ELSE progress
+                       END
+        `;
 
-        res.status(200).send({ submissions });
+        const promises = submissions.map(async(submission) => {
+            const values = [
+                submission_id,
+                submission.token,
+                submission.status['description'],
+                submission.time,
+                submission.memory,
+                submission.status['description']
+            ];
+            await promisePool.execute(insertSql, values);
+        });
+
+        await Promise.all(promises);
+
+        const updatedSubmissions = await Promise.all(tokens.map(async (token) => {
+            const [rows] = await promisePool.execute('SELECT * FROM submission_results WHERE token = ?', [token]);
+            return rows[0];
+        }));
+
+        res.status(200).send({ submissions: updatedSubmissions });
     } catch (error) {
         logger.error(error)
         res.status(500).send(error);
     }
 });
 
-router.post('/', async (req, res) => {
+router.post('/',authenticate(['staff','admin', 'student']), async (req, res) => {
     SetHeader('content-type', 'application/json');
 
     // Comment these if using local server
@@ -55,14 +93,23 @@ router.post('/', async (req, res) => {
     try {
         const test_cases = req.body.test_case;
 
+        // const problem_id = req.body.problem_id;
+        const problem_id = 1;
+
+        const student_id = req.userData.userId;
+
         const submissions = [];
 
         test_cases.forEach((testCase) => {
             const submission = {
+                problem_id,
+                student_id,
                 language_id: req.body.language_id,
                 source_code: btoa(req.body.source_code),
                 stdin: btoa(testCase.input),
+                stdout: btoa(testCase.output),
                 expected_output: btoa(testCase.output),
+                submission_time: new Date().toISOString()
             };
 
             submissions.push(submission);
@@ -85,7 +132,36 @@ router.post('/', async (req, res) => {
 
         const tokens = response.data.map((submission) => submission.token);
 
-        res.status(201).send({ tokens });
+        const insertSql = `
+            INSERT INTO submissions (problem_id, student_id, submitted_code, language, stin, stdout,expected_output, submission_time, tokens)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const promises = submissions.map(async(submission) => {
+            const values = [
+                submission.problem_id,
+                submission.student_id,
+                submission.source_code,
+                submission.language_id,
+                submission.stdin,
+                submission.stdout,
+                submission.expected_output,
+                submission.submission_time,
+                tokens[0],
+            ];
+            
+            const [result] = await promisePool.execute(insertSql, values);
+
+            const submissionId = result.insertId;
+            console.log(submissionId);
+
+            return submissionId;
+        });
+        
+        const submissionId = await Promise.all(promises);
+        console.log(submissionId);
+
+        res.status(201).send({ tokens , submissionId });
     } catch (err) {
         console.log(err);
         res.status(500).send();

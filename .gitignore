@@ -2,3 +2,4 @@
 .env
 models.sql
 /src/utils/app.log
+/request.rest
