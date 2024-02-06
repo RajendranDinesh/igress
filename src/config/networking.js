@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = 'https://judge0-ce.p.rapidapi.com/';
+const BASE_URL = 'localhost:2358';
 
 const instance = axios.create({
     baseURL: BASE_URL,
