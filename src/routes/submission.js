@@ -12,8 +12,8 @@ const logger = new Logger();
 
 router.get('/', async (req, res) => {
 
-    // const submission_id = req.body.submission_id;
-    const submission_id = 3;
+    const submission_id = req.body.submission_id;
+    // const submission_id = 3;
 
     SetHeader('content-type', 'application/json');
 
@@ -40,40 +40,32 @@ router.get('/', async (req, res) => {
             params
         );
 
-        const insertSql = `
-            INSERT INTO submission_results (submission_id, token, status, execution_time, memory_usage, progress)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-            status = VALUES(status),
-            execution_time = VALUES(execution_time),
-            memory_usage = VALUES(memory_usage),
-            progress = CASE
-                            WHEN VALUES(status) = 'accepted' THEN 'accepted'
-                            WHEN progress = 'progress' THEN 'queued'
-                            ELSE progress
-                       END
-        `;
+        if (submission_id) {
 
-        const promises = submissions.map(async(submission) => {
-            const values = [
-                submission_id,
-                submission.token,
-                submission.status['description'],
-                submission.time,
-                submission.memory,
-                submission.status['description']
-            ];
-            await promisePool.execute(insertSql, values);
-        });
+            const { submissions } = response.data;
 
-        await Promise.all(promises);
+            const insertSql = `
+                INSERT INTO submission_results (submission_id, status, Execution_time, Memory_usage, tokens)
+                VALUES (?, ?, ?, ?, ?)
+            `;
 
-        const updatedSubmissions = await Promise.all(tokens.map(async (token) => {
-            const [rows] = await promisePool.execute('SELECT * FROM submission_results WHERE token = ?', [token]);
-            return rows[0];
-        }));
+            const promises = submissions.map(async(submission, index) => {
+                const values = [
+                    submission_id,
+                    submission.status['description'],
+                    submission.time,
+                    submission.memory,
+                    tokens[index]
+                ];
+                
+                await promisePool.execute(insertSql, values);
+            });
 
-        res.status(200).send({ submissions: updatedSubmissions });
+            await Promise.all(promises);
+        }
+
+
+        res.status(200).send({ submissions });
     } catch (error) {
         logger.error(error)
         res.status(500).send(error);
@@ -147,19 +139,17 @@ router.post('/',authenticate(['staff','admin', 'student']), async (req, res) => 
                 submission.stdout,
                 submission.expected_output,
                 submission.submission_time,
-                tokens[0],
+                tokens[0]
             ];
             
             const [result] = await promisePool.execute(insertSql, values);
 
             const submissionId = result.insertId;
-            console.log(submissionId);
 
             return submissionId;
         });
         
         const submissionId = await Promise.all(promises);
-        console.log(submissionId);
 
         res.status(201).send({ tokens , submissionId });
     } catch (err) {
