@@ -224,7 +224,7 @@ router.delete('/:classroomId/staff/:staffId', authenticate(["staff", "admin"]), 
 });
 
 // GET /classroom/:classroomId/student - Get all students from a classroom
-router.get('/:classroomId/student', authenticate(["staff", "admin"]), async (req, res) => {
+router.get('/:classroomId/students', authenticate(["staff", "admin"]), async (req, res) => {
     try {
         const { classroomId } = req.params;
 
