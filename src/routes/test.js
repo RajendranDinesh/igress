@@ -108,6 +108,25 @@ router.get('/:testId', authenticate(), async (req, res) => {
     }
 });
 
+// GET /:classroomId/tests - Get all tests of a classroom
+router.get('/:classroomId/tests', authenticate(["admin", "student"]), async (req, res) => {
+    try {
+        const { classroomId } = req.params;
+        const selectSql = `
+            SELECT t.title, t.duration_in_minutes FROM tests t
+            JOIN classroom_tests ct ON t.test_id = ct.test_id
+            WHERE ct.classroom_id = ?;
+        `;
+
+        const [tests] = await promisePool.execute(selectSql, [classroomId]);
+
+        res.status(200).send(tests)
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
 // GET /test - Get all tests
 router.get('/', authenticate(["admin"]), async (req, res) => {
     try {

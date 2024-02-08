@@ -149,7 +149,7 @@ router.delete('/:id', authenticate(["staff", "admin"]), async (req, res) => {
 });
 
 // GET /classroom/:classroomId/staff - Get all staffs from a classroom
-router.get('/:classroomId/staff', authenticate(["staff", "admin"]), async (req, res) => {
+router.get('/:classroomId/staffs', authenticate(["staff", "admin"]), async (req, res) => {
     try {
         const { classroomId } = req.params;
 
@@ -175,14 +175,20 @@ router.get('/:classroomId/staff', authenticate(["staff", "admin"]), async (req, 
 router.post('/:classroomId/staff', authenticate(["staff", "admin"]), async (req, res) => {
     try {
         const { classroomId } = req.params;
-        const { staffEmail } = req.body;
+        const { email } = req.body;
 
-        if (!staffEmail) {
+        if (!email) {
             return res.status(400).send({ error: 'Staff email is required' });
         }
 
-        const userSql = `SELECT user_id FROM users WHERE email = ? AND role = 'staff'`;
-        const [users] = await promisePool.execute(userSql, [staffEmail]);
+        const userSql = `
+            SELECT u.user_id FROM users u
+            JOIN user_roles ur ON u.user_id = ur.user_id
+            JOIN roles r ON ur.role_id = r.role_id
+            WHERE email = ? AND role_name = 'staff';
+        `;
+
+        const [users] = await promisePool.execute(userSql, [email]);
 
         if (users.length === 0) {
             return res.status(404).send({ error: 'No staff member found with the provided email' });
@@ -318,16 +324,16 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
         let existingUsersAdded = 0;
     
         for (let student of students) {
-            const { email, roll_no, user_name } = student;
+            const { email, roll_number, user_name } = student;
     
             if (!email) {
-                failedToAdd.push({ roll_no, reason: 'Missing email' });
+                failedToAdd.push({ roll_number, reason: 'Missing email' });
                 continue;
-            } else if (!roll_no) {
+            } else if (!roll_number) {
                 failedToAdd.push({ email, reason: 'Missing roll number' });
                 continue;
             } else if (!user_name) {
-                failedToAdd.push({ email, roll_no, reason: 'Missing user name' });
+                failedToAdd.push({ email, roll_number, reason: 'Missing user name' });
                 continue;
             }
     
@@ -345,12 +351,12 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
                         existingUsersAdded++;
                     } else {
                         // User already in classroom, add to failedToAdd with reason
-                        failedToAdd.push({ email, roll_no, reason: 'User already added to classroom' });
+                        failedToAdd.push({ email, roll_number, reason: 'User already added to classroom' });
                     }
                 } else {
                     // Create user and add to classroom
                     const passwordHash = await bcrypt.hash(email, 8);
-                    const userId = await createUser(roll_no, user_name, email, passwordHash, "student");
+                    const userId = await createUser(roll_number, user_name, email, passwordHash, "student");
                     await addStudentToClassroomDB(classroomId, userId);
                     createdAccounts++;
                 }
@@ -358,8 +364,8 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
                 addedStudents++;
             } catch (error) {
                 // Log error and add to failedToAdd list
-                logger.error(`[CLASSROOM] Error processing student with roll number ${roll_no} (${email}): ${error}`);
-                failedToAdd.push({ email, roll_no, reason: 'Failed to add to database' });
+                logger.error(`[CLASSROOM] Error processing student with roll number ${roll_number} (${email}): ${error}`);
+                failedToAdd.push({ email, roll_number, reason: 'Failed to add to database' });
             }
         }
     
