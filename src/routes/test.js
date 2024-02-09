@@ -108,12 +108,12 @@ router.get('/:testId', authenticate(), async (req, res) => {
     }
 });
 
-// GET /:classroomId/tests - Get all tests of a classroom
-router.get('/:classroomId/tests', authenticate(["admin", "student"]), async (req, res) => {
+// GET /:classroomId/tests - Get all scheduled tests of a classroom
+router.get('/:classroomId/tests', authenticate(["admin", "staff", "student"]), async (req, res) => {
     try {
         const { classroomId } = req.params;
         const selectSql = `
-            SELECT t.title, t.duration_in_minutes FROM tests t
+            SELECT t.test_id, t.title, t.duration_in_minutes, ct.scheduled_at FROM tests t
             JOIN classroom_tests ct ON t.test_id = ct.test_id
             WHERE ct.classroom_id = ?;
         `;
@@ -148,8 +148,8 @@ router.post('/schedule', authenticate(['staff', 'admin']), async (req, res) => {
             return res.status(400).send({ error: 'Classroom ID, Test ID, and Scheduled Time are required' });
         }
 
-        const insertSql = `INSERT INTO classroom_tests (classroom_id, test_id, scheduled_at) VALUES (?, ?, ?)`;
-        await promisePool.execute(insertSql, [classroom_id, test_id, scheduled_at]);
+        const insertSql = `INSERT INTO classroom_tests (classroom_id, test_id, scheduled_at, created_by) VALUES (?, ?, ?, ?)`;
+        await promisePool.execute(insertSql, [classroom_id, test_id, scheduled_at, req.userData.userId]);
 
         res.status(201).send({ message: 'Test scheduled in classroom successfully' });
     } catch (error) {
@@ -183,40 +183,6 @@ router.delete('/schedule/:classroom_id/:test_id', authenticate(['staff', 'admin'
         await promisePool.execute(deleteSql, [classroom_id, test_id]);
 
         res.status(200).send({ message: 'Scheduled test cancelled' });
-    } catch (error) {
-        logger.error(`[TEST] ${error}`);
-        res.status(500).send({ error: 'Internal Server Error' });
-    }
-});
-
-// GET /test/schedule/:classroom_id/:test_id - Get details of a scheduled test
-router.get('/schedule/:classroom_id/:test_id', authenticate(), async (req, res) => {
-    try {
-        const { classroom_id, test_id } = req.params;
-
-        const selectSql = `SELECT * FROM classroom_tests WHERE classroom_id = ? AND test_id = ?`;
-        const [rows] = await promisePool.execute(selectSql, [classroom_id, test_id]);
-
-        if (rows.length === 0) {
-            return res.status(404).send({ error: 'Scheduled test not found' });
-        }
-
-        res.status(200).send(rows[0]);
-    } catch (error) {
-        logger.error(`[TEST] ${error}`);
-        res.status(500).send({ error: 'Internal Server Error' });
-    }
-});
-
-// GET /test/schedule/tests/:classroom_id - Get all scheduled tests for a classroom
-router.get('/schedule/tests/:classroom_id', authenticate(), async (req, res) => {
-    try {
-        const { classroom_id } = req.params;
-
-        const selectSql = `SELECT * FROM classroom_tests WHERE classroom_id = ?`;
-        const [rows] = await promisePool.execute(selectSql, [classroom_id]);
-
-        res.status(200).send(rows);
     } catch (error) {
         logger.error(`[TEST] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
