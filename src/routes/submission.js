@@ -4,16 +4,12 @@ import { Logger } from '../utils/logger.js';
 
 import { Request, SetHeader } from '../config/networking.js';
 
-import promisePool from '../config/db.js';
 import authenticate from '../utils/auth.js';
 
 const router = express.Router();
 const logger = new Logger();
 
 router.get('/', async (req, res) => {
-
-    const submission_id = req.body.submission_id;
-    // const submission_id = 3;
 
     SetHeader('content-type', 'application/json');
 
@@ -31,39 +27,16 @@ router.get('/', async (req, res) => {
             tokens: req.query.tokens,
             fields: 'source_code,language_id,stdin,expected_output,stdout,time,memory,status',
             base64_encoded: true,
-        };
+        }
 
         const response = await Request(
             'GET',
             'submissions/batch',
             null,
             params
-        );
+        )
 
-        if (submission_id) {
-
-            const { submissions } = response.data;
-
-            const insertSql = `
-                INSERT INTO submission_results (submission_id, status, Execution_time, Memory_usage, tokens)
-                VALUES (?, ?, ?, ?, ?)
-            `;
-
-            const promises = submissions.map(async(submission, index) => {
-                const values = [
-                    submission_id,
-                    submission.status['description'],
-                    submission.time,
-                    submission.memory,
-                    tokens[index]
-                ];
-                
-                await promisePool.execute(insertSql, values);
-            });
-
-            await Promise.all(promises);
-        }
-
+        const { submissions } = response.data;
 
         res.status(200).send({ submissions });
     } catch (error) {
@@ -85,23 +58,15 @@ router.post('/',authenticate(['staff','admin', 'student']), async (req, res) => 
     try {
         const test_cases = req.body.test_case;
 
-        // const problem_id = req.body.problem_id;
-        const problem_id = 1;
-
-        const student_id = req.userData.userId;
-
         const submissions = [];
 
         test_cases.forEach((testCase) => {
             const submission = {
-                problem_id,
-                student_id,
                 language_id: req.body.language_id,
                 source_code: btoa(req.body.source_code),
                 stdin: btoa(testCase.input),
                 stdout: btoa(testCase.output),
-                expected_output: btoa(testCase.output),
-                submission_time: new Date().toISOString()
+                expected_output: btoa(testCase.output)
             };
 
             submissions.push(submission);
@@ -124,34 +89,7 @@ router.post('/',authenticate(['staff','admin', 'student']), async (req, res) => 
 
         const tokens = response.data.map((submission) => submission.token);
 
-        const insertSql = `
-            INSERT INTO submissions (problem_id, student_id, submitted_code, language, stin, stdout,expected_output, submission_time, tokens)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-
-        const promises = submissions.map(async(submission) => {
-            const values = [
-                submission.problem_id,
-                submission.student_id,
-                submission.source_code,
-                submission.language_id,
-                submission.stdin,
-                submission.stdout,
-                submission.expected_output,
-                submission.submission_time,
-                tokens[0]
-            ];
-            
-            const [result] = await promisePool.execute(insertSql, values);
-
-            const submissionId = result.insertId;
-
-            return submissionId;
-        });
-        
-        const submissionId = await Promise.all(promises);
-
-        res.status(201).send({ tokens , submissionId });
+        res.status(201).send({ tokens });
     } catch (err) {
         console.log(err);
         res.status(500).send();

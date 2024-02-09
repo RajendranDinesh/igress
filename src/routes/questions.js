@@ -1,70 +1,155 @@
 import express from 'express';
 import promisePool from '../config/db.js';
 
+import { Logger } from '../utils/logger.js';
+
 const router = express.Router();
+const logger = new Logger();
 
-router.get('/', async (req, res) => {
+// GET /question/:test_id - Get all questions for a test
+router.get('/:test_id', async (req, res) => {
+    const { test_id } = req.params;
+
     try {
-        const [rows, fields] = await promisePool.query(
-            'SELECT * FROM questions'
-        );
-        res.status(200).send({ questions: rows });
-    } catch (error) {
-        console.log(error);
-        res.status(500).send();
+        const query = `
+            SELECT 
+                q.question_id, 
+                q.question, 
+                qt.type_name, 
+                q.created_at, 
+                q.updated_at
+            FROM questions q
+            INNER JOIN question_type qt ON q.question_type = qt.type_id
+            WHERE q.test_id = ?
+            ORDER BY q.question_id ASC;`;
+
+        const [questions] = await promisePool.query(query, [test_id]);
+
+        if (questions.length > 0) {
+            res.json(questions);
+        } else {
+            res.status(404).send('No questions found for the specified test.');
+        }
+    } catch (e) {
+        logger.error(e);
+        res.status(500).send('[QUESTION] Internal Server Error');
     }
 });
 
-router.get('/:id', async (req, res) => {
+// GET /question/:test_id/:question_id - Get a specific question for a test
+router.get('/:test_id/:question_id', async (req, res) => {
+    const { test_id, question_id } = req.params;
+
     try {
-        const [rows, fields] = await promisePool.query(
-            'SELECT * FROM questions WHERE id = ?',
-            [req.params.id]
-        );
-        res.status(200).send({ question: rows[0] });
-    } catch (error) {
-        console.log(error);
-        res.status(500).send();
+        const baseQuestionQuery = `
+            SELECT 
+                q.*,
+                qt.type_name
+            FROM questions q
+            INNER JOIN question_type qt ON q.question_type = qt.type_id
+            WHERE q.test_id = ? AND q.question_id = ?`;
+
+        const [baseQuestion] = await promisePool.query(baseQuestionQuery, [test_id, question_id]);
+
+        if (baseQuestion.length === 0) {
+            return res.status(404).send('Question not found for the specified test.');
+        }
+
+        let detailedQuestion = baseQuestion[0];
+
+        switch (detailedQuestion.type_name.toLowerCase()) {
+            case 'code':
+                const codeQuestionQuery = `SELECT * FROM code_questions WHERE question_id = ?`;
+                const [codeDetails] = await promisePool.query(codeQuestionQuery, [question_id]);
+                detailedQuestion = { ...detailedQuestion, ...codeDetails[0] };
+                break;
+            // Future case for different question types
+            // case 'multiple choice':
+            //     // Fetch details specific to multiple choice questions
+            //     break;
+            // Add more cases as you introduce more question types
+        }
+
+        res.json(detailedQuestion);
+    } catch (e) {
+        logger.error(e);
+        res.status(500).send('[QUESTIONS] Internal Server Error');
     }
 });
 
-router.post('/', async (req, res) => {
+// POST /question/add-code - Add a code question to a test
+router.post('/add-code', async (req, res) => {
+    const { test_id, question_type, question, starter_code, allowed_languages, input_specification, output_specification, public_test_case, private_test_case } = req.body;
+
     try {
-        const [rows, fields] = await promisePool.query(
-            'INSERT INTO questions (title, level, description) VALUES (?, ?, ?)',
-            [req.body.title, req.body.level, req.body.description]
-        );
-        const question_id = rows.insertId;
+        const insertQuestionQuery = `
+            INSERT INTO questions (test_id, question_type, question)
+            VALUES (?, ?, ?)`;
 
-        const { examples } = req.body;
-        examples.forEach(async (example) => {
-            await promisePool.query(
-                'INSERT INTO examples (question_id, example_text) VALUES (?, ?)',
-                [question_id, example.text]
-            );
-        });
+        const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, question_type, question]);
+        
+        const question_id = questionResult.insertId;
 
-        const { solutions } = req.body;
-        solutions.forEach(async (solution) => {
-            await promisePool.query(
-                'INSERT INTO solutions (question_id, language_id, solution_text) VALUES (?, ?, ?)',
-                [question_id, solution.language_id, solution.text]
-            );
-        });
+        let insertFields = [];
+        let placeholders = [];
+        let queryParams = [];
 
-        const { test_cases } = req.body;
-        test_cases.forEach(async (test_case) => {
-            await promisePool.query(
-                'INSERT INTO test_cases (question_id, input, expected_output) VALUES (?, ?, ?)',
-                [question_id, test_case.input, test_case.output]
-            );
-        });
+        if (starter_code !== undefined) {
+            insertFields.push('starter_code');
+            placeholders.push('?');
+            queryParams.push(starter_code);
+        }
 
-        res.status(200).send({ question: rows[0] });
-    } catch (error) {
-        console.log(error);
-        res.status(500).send();
+        if (allowed_languages !== undefined) {
+            insertFields.push('allowed_languages');
+            placeholders.push('?');
+            queryParams.push(JSON.stringify(allowed_languages));
+        }
+
+        if (input_specification !== undefined) {
+            insertFields.push('input_specification');
+            placeholders.push('?');
+            queryParams.push(input_specification);
+        }
+
+        if (output_specification !== undefined) {
+            insertFields.push('output_specification');
+            placeholders.push('?');
+            queryParams.push(output_specification);
+        }
+
+        if (public_test_case !== undefined) {
+            insertFields.push('public_test_case');
+            placeholders.push('?');
+            queryParams.push(JSON.stringify(public_test_case));
+        }
+
+        if (private_test_case !== undefined) {
+            insertFields.push('private_test_case');
+            placeholders.push('?');
+            queryParams.push(JSON.stringify(private_test_case));
+        }
+
+        if (insertFields.length === 0) {
+            return res.status(400).send({ error: 'No code question fields provided' });
+        }
+
+        queryParams.unshift(question_id);
+        insertFields.unshift('question_id');
+        placeholders.unshift('?');
+
+        const insertCodeQuestionQuery = `
+            INSERT INTO code_questions (${insertFields.join(', ')})
+            VALUES (${placeholders.join(', ')})`;
+
+        await promisePool.query(insertCodeQuestionQuery, queryParams);
+
+        res.status(201).send({ message: 'Code question added successfully', question_id: question_id });
+    } catch (e) {
+        logger.error(e);
+        res.status(500).send('[ADD CODE QUESTION] Internal Server Error');
     }
 });
+
 
 export default router;
