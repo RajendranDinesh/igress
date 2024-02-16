@@ -24,7 +24,6 @@ app.use('/api/classroom', classroomRouter);
 app.use('/api/question', questionRouter);
 app.use('/api/submission', submissionRouter);
 app.use('/api/test', testRouter);
-// app.use('/api/supervisor', supervisorRouter);
-app.use(supervisorRouter);
+app.use('/api/supervisor', supervisorRouter);
 
 export default app;
