@@ -5,11 +5,12 @@ import { Logger } from '../utils/logger.js';
 import { Request, SetHeader } from '../config/networking.js';
 
 import authenticate from '../utils/auth.js';
+import promisePool from '../config/db.js';
 
 const router = express.Router();
 const logger = new Logger();
 
-router.get('/', async (req, res) => {
+router.get('/', authenticate(['staff','admin', 'student']), async (req, res) => {
 
     SetHeader('content-type', 'application/json');
 
@@ -19,13 +20,15 @@ router.get('/', async (req, res) => {
 
     try {
 
-        if (!req.query.tokens) {
+        const tokens = req.query.tokens;
+
+        if (!tokens) {
             throw Error("Token not found..")
         }
 
         const params = {
-            tokens: req.query.tokens,
-            fields: 'source_code,language_id,stdin,expected_output,stdout,time,memory,status',
+            tokens: tokens,
+            fields: 'source_code,language_id,stdin,expected_output,stdout,stderr,time,memory,status',
             base64_encoded: true,
         }
 
@@ -45,7 +48,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/',authenticate(['staff','admin', 'student']), async (req, res) => {
+router.post('/', authenticate(['staff','admin', 'student']), async (req, res) => {
     SetHeader('content-type', 'application/json');
 
     // Comment these if using local server
@@ -57,13 +60,17 @@ router.post('/',authenticate(['staff','admin', 'student']), async (req, res) => 
 
     try {
         const test_cases = req.body.test_case;
+        const userId = req.userData.userId;
+        const questionId = 17; // caution here
+        const languageId = req.body.language_id;
+        const sourceCode = btoa(req.body.source_code);
 
         const submissions = [];
 
         test_cases.forEach((testCase) => {
             const submission = {
-                language_id: req.body.language_id,
-                source_code: btoa(req.body.source_code),
+                language_id: languageId,
+                source_code: sourceCode,
                 stdin: btoa(testCase.input),
                 stdout: btoa(testCase.output),
                 expected_output: btoa(testCase.output)
@@ -88,6 +95,18 @@ router.post('/',authenticate(['staff','admin', 'student']), async (req, res) => 
         );
 
         const tokens = response.data.map((submission) => submission.token);
+
+        const dbInsertValues = {
+            student_id: userId,
+            question_id: questionId,
+            language: languageId,
+            source_code: sourceCode,
+            j_tokens: btoa(tokens),
+        }
+
+        const [submission] = await promisePool.query(`INSERT INTO code_submissions SET ?`, dbInsertValues);
+
+        const submissionId = submission.insertId;
 
         res.status(201).send({ tokens });
     } catch (err) {

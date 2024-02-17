@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import expressStatusMonitor from 'express-status-monitor';
 
 import authRouter from './routes/auth.js';
 import classroomRouter from './routes/classroom.js';
@@ -15,6 +16,7 @@ const corsOptions = {
     origin: ['http://127.0.0.1:3000', 'http://localhost:3000', process.env.FRONTEND_URL],
 };
 
+app.use(expressStatusMonitor());
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

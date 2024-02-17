@@ -27,7 +27,7 @@ router.post('/create', authenticate(['staff', 'admin']), async (req, res) => {
 });
 
 // GET /classroom/all - Get all classrooms
-router.get('/all', authenticate(['staff','admin']), async (req, res) => {
+router.get('/all', authenticate(['staff', 'admin']), async (req, res) => {
     try {
         const selectSql = `
             SELECT c.classroom_id, c.name, c.description, c.created_at, c.updated_at, u.roll_no AS created_by
@@ -70,6 +70,10 @@ router.get('/user/:userId', authenticate(["staff", "admin"]), async (req, res) =
     try {
         let { userId } = req.params;
 
+        const limit = parseInt(req.query.limit) || 10; // Default limit is 10
+        const page = parseInt(req.query.page) || 1; // Default page is 1
+        const offset = (page - 1) * limit; // Calculate offset
+
         if (userId === "me") {
             userId = req.userData.userId;
         }
@@ -80,12 +84,27 @@ router.get('/user/:userId', authenticate(["staff", "admin"]), async (req, res) =
             LEFT JOIN classroom_staff cs ON c.classroom_id = cs.classroom_id
             WHERE c.created_by = ? OR cs.staff_id = ?
             GROUP BY c.classroom_id
+            LIMIT ? OFFSET ?
         `;
 
-        const [classrooms] = await promisePool.execute(selectSql, [userId, userId]);
+        const [classrooms] = await promisePool.query(selectSql, [userId, userId, limit, offset]);
 
-        res.send(classrooms);
+        const countSql = `
+            SELECT COUNT(DISTINCT c.classroom_id) AS total
+            FROM classrooms c
+            LEFT JOIN classroom_staff cs ON c.classroom_id = cs.classroom_id
+            WHERE c.created_by = ? OR cs.staff_id = ?
+        `;
+
+        const [[{ total }]] = await promisePool.execute(countSql, [userId, userId]);
+
+        res.send({
+            classrooms, total,
+            pages: Math.ceil(total / limit),
+            currentPage: page
+        });
     } catch (error) {
+        console.log(error)
         logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
     }
@@ -255,14 +274,27 @@ router.get('/:classroomId/students', authenticate(["staff", "admin"]), async (re
 // POST /classrooms/:classroomId/students - Add students to a classroom
 router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (req, res) => {
 
-    async function addStudentToClassroomDB(classroomId, studentId) {
+    async function addStudentToClassroomDB(classroomId, studentId, role_name) {
         const insertSql = `INSERT INTO classroom_student (classroom_id, student_id) VALUES (?, ?)`;
+        const selectRoleSql = `SELECT role_id FROM roles WHERE role_name = ?`;
+
         try {
             await promisePool.execute(insertSql, [classroomId, studentId]);
+            const [roleResult] = await promisePool.execute(selectRoleSql, [role_name]);
+
+            if (roleResult.length === 0) {
+                throw new Error(`Role ${roleName} not found.`);
+            }
+            const roleId = roleResult[0].role_id;
+
+            const insertUserRoleSql = `INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`;
+            await promisePool.execute(insertUserRoleSql, [studentId, roleId]);
+
         } catch (error) {
             if (error.code !== "ER_DUP_ENTRY") {
                 logger.error(`[CLASSROOM] Error adding student: ${error}`);
             }
+            throw new Error(`[ADD Student To DB] ${error}`)
         }
     }
 
@@ -270,10 +302,7 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
         const checkSql = `
         SELECT u.user_id, u.email
         FROM users u
-        JOIN user_roles ur ON u.user_id = ur.user_id
-        JOIN roles r ON ur.role_id = r.role_id
-        WHERE r.role_name = 'student'
-        AND u.email = ?;
+        WHERE u.email = ?;
         `
 
         const [users] = await promisePool.execute(checkSql, [email]);
@@ -292,40 +321,30 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
         return result.length > 0;
     }
 
-    async function createUser(roll_no, userName, email, passwordHash, roleName) {
+    async function createUser(roll_no, userName, email, passwordHash) {
         const insertUserSql = `INSERT INTO users (roll_no, user_name, email, password_hash) VALUES (?, ?, ?, ?)`;
         const [userResult] = await promisePool.execute(insertUserSql, [roll_no, userName, email, passwordHash]);
         const userId = userResult.insertId;
 
-        const selectRoleSql = `SELECT role_id FROM roles WHERE role_name = ?`;
-        const [roleResult] = await promisePool.execute(selectRoleSql, [roleName]);
-        if (roleResult.length === 0) {
-            throw new Error(`Role ${roleName} not found.`);
-        }
-        const roleId = roleResult[0].role_id;
-
-        const insertUserRoleSql = `INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`;
-        await promisePool.execute(insertUserRoleSql, [userId, roleId]);
-    
         return userId;
     }
 
     try {
         const { classroomId } = req.params;
         const { students } = req.body; // Changed from studentEmails to students
-    
+
         if (!students || !Array.isArray(students) || students.length === 0) {
             return res.status(400).send({ error: 'Student details are required' });
         }
-    
+
         let addedStudents = 0;
         let createdAccounts = 0;
         let failedToAdd = [];
         let existingUsersAdded = 0;
-    
+
         for (let student of students) {
             const { email, roll_number, user_name } = student;
-    
+
             if (!email) {
                 failedToAdd.push({ roll_number, reason: 'Missing email' });
                 continue;
@@ -336,18 +355,18 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
                 failedToAdd.push({ email, roll_number, reason: 'Missing user name' });
                 continue;
             }
-    
+
             try {
                 // Check if the user already exists
                 const userExists = await getStudentUserId(email);
-                
+
                 if (userExists) {
                     // Check if already added to classroom
-                    const alreadyAdded = await isStudentInClassroom(classroomId, userExists.userId);
-                    
+                    const alreadyAdded = await isStudentInClassroom(classroomId, userExists.user_id);
+
                     if (!alreadyAdded) {
                         // Add existing user to classroom
-                        await addStudentToClassroomDB(classroomId, userExists.userId);
+                        await addStudentToClassroomDB(classroomId, userExists.user_id, 'student');
                         existingUsersAdded++;
                     } else {
                         // User already in classroom, add to failedToAdd with reason
@@ -356,11 +375,11 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
                 } else {
                     // Create user and add to classroom
                     const passwordHash = await bcrypt.hash(email, 8);
-                    const userId = await createUser(roll_number, user_name, email, passwordHash, "student");
-                    await addStudentToClassroomDB(classroomId, userId);
+                    const userId = await createUser(roll_number, user_name, email, passwordHash);
+                    await addStudentToClassroomDB(classroomId, userId, 'student');
                     createdAccounts++;
                 }
-    
+
                 addedStudents++;
             } catch (error) {
                 // Log error and add to failedToAdd list
@@ -368,13 +387,13 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
                 failedToAdd.push({ email, roll_number, reason: 'Failed to add to database' });
             }
         }
-    
+
         // Prepare detailed response
         let responseMessage = `${addedStudents} students processed. ${createdAccounts} new accounts created. ${existingUsersAdded} existing users added to classroom.`;
         if (failedToAdd.length > 0) {
             responseMessage += ` Some students could not be added.`;
         }
-    
+
         res.status(201).send({
             message: responseMessage,
             details: {
@@ -386,7 +405,7 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
     } catch (error) {
         logger.error(`[CLASSROOM] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
-    }    
+    }
 });
 
 
