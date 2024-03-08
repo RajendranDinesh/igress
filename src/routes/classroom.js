@@ -19,6 +19,9 @@ router.post('/create', authenticate(['staff', 'admin']), async (req, res) => {
         const insertSql = `INSERT INTO classrooms (name, description, created_by) VALUES (?, ?, ?)`;
         const [result] = await promisePool.execute(insertSql, [name, description, req.userData.userId]);
 
+        const insertStaffSql = `INSERT INTO classroom_staff (classroom_id, staff_id) VALUES (?, ?)`;
+        await promisePool.execute(insertStaffSql, [result.insertId, req.userData.userId]);
+
         res.status(201).send({ message: 'Classroom created', classroomId: result.insertId });
     } catch (error) {
         logger.error(`[CLASSROOM] ${error}`);
@@ -277,18 +280,24 @@ router.post('/:classroomId/students', authenticate(["staff", "admin"]), async (r
     async function addStudentToClassroomDB(classroomId, studentId, role_name) {
         const insertSql = `INSERT INTO classroom_student (classroom_id, student_id) VALUES (?, ?)`;
         const selectRoleSql = `SELECT role_id FROM roles WHERE role_name = ?`;
+        const checkStudentRoleSql = `SELECT * FROM user_roles WHERE user_id = ? AND role_id = ?`;
 
         try {
             await promisePool.execute(insertSql, [classroomId, studentId]);
             const [roleResult] = await promisePool.execute(selectRoleSql, [role_name]);
 
             if (roleResult.length === 0) {
-                throw new Error(`Role ${roleName} not found.`);
+                throw new Error(`Role ${role_name} not found.`);
             }
+
             const roleId = roleResult[0].role_id;
 
-            const insertUserRoleSql = `INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`;
-            await promisePool.execute(insertUserRoleSql, [studentId, roleId]);
+            const [checkResult] = await promisePool.execute(checkStudentRoleSql, [studentId, roleId]);
+
+            if (checkResult.length == 0) {
+                const insertUserRoleSql = `INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`;
+                await promisePool.execute(insertUserRoleSql, [studentId, roleId]);
+            }
 
         } catch (error) {
             if (error.code !== "ER_DUP_ENTRY") {

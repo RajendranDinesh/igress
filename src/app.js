@@ -19,7 +19,7 @@ const corsOptions = {
 app.use(expressStatusMonitor());
 app.use(cors(corsOptions));
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/auth', authRouter);
 app.use('/api/classroom', classroomRouter);

@@ -29,12 +29,12 @@ const authenticate = (allowedRoles = ['student']) => {
             next();
         } catch (error) {
             if (error.name === 'TokenExpiredError') {
-                return res.status(498).send({ message: 'Token expired' });
+                return res.status(498).send({ message: '[AUTH] Token expired' });
             } else if (error.code === "ETIMEDOUT") {
                 return res.status(401).send({ message: '[AUTH] DB Connection failed' });
             }
 
-            return res.status(401).send({ message: 'Authentication failed' });
+            return res.status(401).send({ message: '[AUTH] Verification failed' });
         }
     };
 };

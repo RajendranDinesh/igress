@@ -28,7 +28,7 @@ router.get('/', authenticate(['staff','admin', 'student']), async (req, res) => 
 
         const params = {
             tokens: tokens,
-            fields: 'source_code,language_id,stdin,expected_output,stdout,stderr,time,memory,status',
+            fields: 'source_code,language_id,stdin,expected_output,stdout,stderr,compile_output,time,memory,status',
             base64_encoded: true,
         }
 

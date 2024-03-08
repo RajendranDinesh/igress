@@ -20,9 +20,15 @@ router.post('/register', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 8);
 
         const [result] = await promisePool.query(
-            'INSERT INTO users (roll_no, user_name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
-            [roll_no, userName, email, hashedPassword, role]
+            `INSERT INTO users (roll_no, user_name, email, password_hash) VALUES (?, ?, ?, ?)`,
+            [roll_no, userName, email, hashedPassword]
         );
+
+        const [roleId] = await promisePool.query('SELECT role_id FROM roles WHERE role_name = ?', [role]);
+
+        const insertUserRoleSql = `INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`;
+
+        await promisePool.query(insertUserRoleSql, [result.insertId, roleId[0].role_id]);
 
         res.status(201).send({ message: 'User registered', userId: result.insertId });
     } catch (error) {

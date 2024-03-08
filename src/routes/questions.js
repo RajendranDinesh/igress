@@ -1,6 +1,7 @@
 import express from 'express';
-import promisePool from '../config/db.js';
+import multer from 'multer';
 
+import promisePool from '../config/db.js';
 import { Logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -151,5 +152,51 @@ router.post('/add-code', async (req, res) => {
     }
 });
 
+// POST /question/add-code - Add a mcq question to a test
+router.post('/add-mcq', multer().single('question_image'), async (req, res) => {
+
+    const imageBuffer = req.file ? req.file.buffer : null;
+
+    const base64Image = imageBuffer ? imageBuffer.toString('base64') : null;
+
+    const requestBody = JSON.parse(req.body.question_data);
+
+    const { test_id, question_type, question, options } = requestBody;
+
+    try {
+        const questionTypeQuery = `SELECT type_id FROM question_type WHERE type_name = ?`;
+        const [questionTypeResult] = await promisePool.query(questionTypeQuery, ['mcq']);
+
+        const insertQuestionQuery = `
+            INSERT INTO questions (test_id, question_type, question)
+            VALUES (?, ?, ?)`;
+
+        const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, questionTypeResult[0].type_name, question]);
+        
+        const question_id = questionResult.insertId;
+
+        const insertMCQQuestionQuery = `
+            INSERT INTO mcq_questions (question_id, multiple_correct)
+            VALUES (?, ?)`;
+
+        const [mcqQuestionReqult] = await promisePool.query(insertMCQQuestionQuery, [question_id, question_type]);
+
+        const mcq_id = mcqQuestionReqult.insertId;
+
+        let insertOptionsQuery = 'INSERT INTO mcq_options (mcq_question_id, option_text, is_correct) VALUES ';
+        let insertOptionsValues = [];
+
+        options.forEach((option) => {
+            insertOptionsValues.push(`(${mcq_id}, "${option.value}", ${option.correct})`);
+        });
+
+        insertOptionsQuery += insertOptionsValues.join(', ');
+
+        res.status(201).send({ message: 'MCQ question added successfully', question_id: question_id });
+    } catch (e) {
+        logger.error(e);
+        res.status(500).send('[ADD MCQ QUESTION] Internal Server Error');
+    }
+});
 
 export default router;
