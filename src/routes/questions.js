@@ -14,8 +14,8 @@ router.get('/:test_id', async (req, res) => {
     try {
         const query = `
             SELECT 
-                q.question_id, 
-                q.question, 
+                q.question_id,
+                q.question_title,
                 qt.type_name, 
                 q.created_at, 
                 q.updated_at
@@ -80,14 +80,14 @@ router.get('/:test_id/:question_id', async (req, res) => {
 
 // POST /question/add-code - Add a code question to a test
 router.post('/add-code', async (req, res) => {
-    const { test_id, question_type, question, starter_code, allowed_languages, input_specification, output_specification, public_test_case, private_test_case } = req.body;
+    const { test_id, question_type, question, question_title, starter_code, allowed_languages, input_specification, output_specification, public_test_case, private_test_case } = req.body;
 
     try {
         const insertQuestionQuery = `
-            INSERT INTO questions (test_id, question_type, question)
-            VALUES (?, ?, ?)`;
+            INSERT INTO questions (test_id, question_type, question, question_title)
+            VALUES (?, ?, ?, ?)`;
 
-        const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, question_type, question]);
+        const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, question_type, question, question_title]);
         
         const question_id = questionResult.insertId;
 

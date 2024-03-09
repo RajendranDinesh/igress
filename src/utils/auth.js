@@ -26,6 +26,7 @@ const authenticate = (allowedRoles = ['student']) => {
             }
 
             req.userData = decoded;
+            req.userRoles = userRoles;
             next();
         } catch (error) {
             if (error.name === 'TokenExpiredError') {

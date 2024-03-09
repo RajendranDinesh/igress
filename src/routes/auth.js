@@ -32,7 +32,11 @@ router.post('/register', async (req, res) => {
 
         res.status(201).send({ message: 'User registered', userId: result.insertId });
     } catch (error) {
-        logger.debug(error)
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).send({ message: 'Email (or) roll number already in use' });
+        }
+
+        logger.error(error)
         res.status(500).send({ message: 'Error registering user', error });
     }
 });

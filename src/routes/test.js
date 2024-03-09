@@ -75,12 +75,21 @@ router.put('/:testId', authenticate(['staff', 'admin']), async (req, res) => {
 });
 
 // DELETE /test/:testId - Delete a test
-router.delete('/:testId', authenticate(['admin']), async (req, res) => {
+router.delete('/:testId', authenticate(['admin', 'staff']), async (req, res) => {
     try {
         const { testId } = req.params;
 
-        const deleteSql = `DELETE FROM tests WHERE test_id = ?`;
-        await promisePool.execute(deleteSql, [testId]);
+        if (isNaN(testId)) {
+            return res.status(400).send({ error: 'Invalid test ID' });
+        }
+
+        if (req.userRoles.includes('admin')) {
+            let deleteSql = `DELETE FROM tests WHERE test_id = ?`;
+            await promisePool.execute(deleteSql, [testId]);
+        } else {
+            let deleteSql = `DELETE FROM tests WHERE test_id = ? AND created_by = ?`;
+            await promisePool.execute(deleteSql, [testId, req.userData.userId]);
+        }
 
         res.status(200).send({ message: 'Test deleted' });
     } catch (error) {
@@ -90,11 +99,11 @@ router.delete('/:testId', authenticate(['admin']), async (req, res) => {
 });
 
 // GET /test/:testId - Get a specific test
-router.get('/:testId', authenticate(), async (req, res) => {
+router.get('/:testId', authenticate(["staff", "admin", "student", "supervisor"]), async (req, res) => {
     try {
         const { testId } = req.params;
 
-        const selectSql = `SELECT * FROM tests WHERE test_id = ?`;
+        const selectSql = `SELECT test_id, title, description, duration_in_minutes FROM tests WHERE test_id = ?`;
         const [rows] = await promisePool.execute(selectSql, [testId]);
 
         if (rows.length === 0) {
@@ -108,12 +117,12 @@ router.get('/:testId', authenticate(), async (req, res) => {
     }
 });
 
-// GET /:classroomId/tests - Get all scheduled tests of a classroom
+// GET /test/:classroomId/tests - Get all scheduled tests of a classroom
 router.get('/:classroomId/tests', authenticate(["admin", "staff", "student"]), async (req, res) => {
     try {
         const { classroomId } = req.params;
         const selectSql = `
-            SELECT t.test_id, t.title, t.duration_in_minutes, ct.scheduled_at FROM tests t
+            SELECT t.test_id, t.title, t.description, t.duration_in_minutes, ct.scheduled_at FROM tests t
             JOIN classroom_tests ct ON t.test_id = ct.test_id
             WHERE ct.classroom_id = ?;
         `;
@@ -121,6 +130,39 @@ router.get('/:classroomId/tests', authenticate(["admin", "staff", "student"]), a
         const [tests] = await promisePool.execute(selectSql, [classroomId]);
 
         res.status(200).send(tests)
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /test/user/created-by-me - Get all tests created by the user
+router.get('/user/created-by-me', authenticate(["admin", "staff"]), async (req, res) => {
+    try {
+
+        const selectSql = `SELECT test_id, title, description, duration_in_minutes FROM tests WHERE created_by = ?`;
+        const [rows] = await promisePool.execute(selectSql, [req.userData.userId]);
+
+        res.status(200).send({ tests: rows });
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /test/:testId/classrooms - Get all classrooms where a test is scheduled
+router.get('/:testId/classrooms', authenticate(["admin", "staff", "student"]), async (req, res) => {
+    try {
+        const { testId } = req.params;
+        const selectSql = `
+            SELECT c.classroom_id, c.name, c.description, c.created_at, ct.scheduled_at FROM classrooms c
+            JOIN classroom_tests ct ON c.classroom_id = ct.classroom_id
+            WHERE ct.test_id = ?;
+        `;
+
+        const [classrooms] = await promisePool.execute(selectSql, [testId]);
+
+        res.status(200).send(classrooms)
     } catch (error) {
         logger.error(`[TEST] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
