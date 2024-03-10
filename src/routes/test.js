@@ -1,4 +1,5 @@
 import express from 'express';
+import moment from 'moment-timezone';
 
 import { Logger } from '../utils/logger.js';
 import promisePool from '../config/db.js';
@@ -122,7 +123,7 @@ router.get('/:classroomId/tests', authenticate(["admin", "staff", "student"]), a
     try {
         const { classroomId } = req.params;
         const selectSql = `
-            SELECT t.test_id, t.title, t.description, t.duration_in_minutes, ct.scheduled_at FROM tests t
+            SELECT ct.id, t.test_id, t.title, t.description, t.duration_in_minutes, ct.scheduled_at FROM tests t
             JOIN classroom_tests ct ON t.test_id = ct.test_id
             WHERE ct.classroom_id = ?;
         `;
@@ -185,10 +186,12 @@ router.get('/', authenticate(["admin"]), async (req, res) => {
 // POST /test/schedule - Schedule a test in a classroom
 router.post('/schedule', authenticate(['staff', 'admin']), async (req, res) => {
     try {
-        const { classroom_id, test_id, scheduled_at } = req.body;
+        let { classroom_id, test_id, scheduled_at } = req.body;
         if (!classroom_id || !test_id || !scheduled_at) {
             return res.status(400).send({ error: 'Classroom ID, Test ID, and Scheduled Time are required' });
         }
+
+        scheduled_at = moment(scheduled_at).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
 
         const insertSql = `INSERT INTO classroom_tests (classroom_id, test_id, scheduled_at, created_by) VALUES (?, ?, ?, ?)`;
         await promisePool.execute(insertSql, [classroom_id, test_id, scheduled_at, req.userData.userId]);
@@ -216,13 +219,13 @@ router.put('/schedule/:classroom_id/:test_id', authenticate(['staff', 'admin']),
     }
 });
 
-// DELETE /test/schedule/:classroom_id/:test_id - Cancel a scheduled test
-router.delete('/schedule/:classroom_id/:test_id', authenticate(['staff', 'admin']), async (req, res) => {
+// DELETE /test/schedule/:classroom_id/:schedule_id - Cancel a scheduled test
+router.delete('/schedule/:classroom_id/:schedule_id', authenticate(['staff', 'admin']), async (req, res) => {
     try {
-        const { classroom_id, test_id } = req.params;
+        const { classroom_id, schedule_id } = req.params;
 
-        const deleteSql = `DELETE FROM classroom_tests WHERE classroom_id = ? AND test_id = ?`;
-        await promisePool.execute(deleteSql, [classroom_id, test_id]);
+        const deleteSql = `DELETE FROM classroom_tests WHERE classroom_id = ? AND id = ?`;
+        await promisePool.execute(deleteSql, [classroom_id, schedule_id]);
 
         res.status(200).send({ message: 'Scheduled test cancelled' });
     } catch (error) {
