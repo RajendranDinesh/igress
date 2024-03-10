@@ -1,5 +1,4 @@
 import express from 'express';
-import multer from 'multer';
 
 import promisePool from '../config/db.js';
 import { Logger } from '../utils/logger.js';
@@ -15,14 +14,15 @@ router.get('/:test_id', async (req, res) => {
         const query = `
             SELECT 
                 q.question_id,
-                q.question_title,
+                COALESCE(q.question_title, q.question) AS question_title,
                 qt.type_name, 
                 q.created_at, 
                 q.updated_at
             FROM questions q
             INNER JOIN question_type qt ON q.question_type = qt.type_id
             WHERE q.test_id = ?
-            ORDER BY q.question_id ASC;`;
+            ORDER BY q.question_id ASC;
+        `;
 
         const [questions] = await promisePool.query(query, [test_id]);
 
@@ -64,6 +64,15 @@ router.get('/:test_id/:question_id', async (req, res) => {
                 const [codeDetails] = await promisePool.query(codeQuestionQuery, [question_id]);
                 detailedQuestion = { ...detailedQuestion, ...codeDetails[0] };
                 break;
+            case 'mcq':
+                const mcqQuestionQuery = `SELECT * FROM mcq_questions WHERE question_id = ?`;
+                const [mcqDetails] = await promisePool.query(mcqQuestionQuery, [question_id]);
+
+                const mcqOptionsQuery = `SELECT * FROM mcq_options WHERE mcq_question_id = ?`;
+                const [mcqOptions] = await promisePool.query(mcqOptionsQuery, [mcqDetails[0].mcq_question_id]);
+
+                detailedQuestion = { ...detailedQuestion, ...mcqDetails[0], options: mcqOptions };
+                break;
             // Future case for different question types
             // case 'multiple choice':
             //     // Fetch details specific to multiple choice questions
@@ -83,7 +92,6 @@ router.post('/add-code', async (req, res) => {
     const { test_id, question, question_title, solution_code, allowed_languages, public_test_case, private_test_case, marks } = req.body;
 
     try {
-        // get question type id
         const questionTypeQuery = `SELECT type_id FROM question_type WHERE type_name = "code"`;
         const [questionTypeResult] = await promisePool.query(questionTypeQuery);
 
@@ -95,7 +103,7 @@ router.post('/add-code', async (req, res) => {
             VALUES (?, ?, ?, ?, ?)`;
 
         const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, question_type, question, question_title, marks]);
-        
+
         const question_id = questionResult.insertId;
 
         let insertFields = [];
@@ -148,31 +156,32 @@ router.post('/add-code', async (req, res) => {
 });
 
 // POST /question/add-code - Add a mcq question to a test
-router.post('/add-mcq', multer().single('question_image'), async (req, res) => {
+router.post('/add-mcq', async (req, res) => {
 
-    const imageBuffer = req.file ? req.file.buffer : null;
+    const requestBody = req.body;
 
-    const base64Image = imageBuffer ? imageBuffer.toString('base64') : null;
-
-    const requestBody = JSON.parse(req.body.question_data);
-
-    const { test_id, question_type, question, options } = requestBody;
+    const { test_id, question_type, question, options, marks } = requestBody;
 
     try {
-        const questionTypeQuery = `SELECT type_id FROM question_type WHERE type_name = ?`;
-        const [questionTypeResult] = await promisePool.query(questionTypeQuery, ['mcq']);
+        const questionTypeQuery = `SELECT type_id FROM question_type WHERE type_name = "mcq"`;
+        const [questionTypeResult] = await promisePool.query(questionTypeQuery);
 
         const insertQuestionQuery = `
-            INSERT INTO questions (test_id, question_type, question)
-            VALUES (?, ?, ?)`;
+            INSERT INTO questions (test_id, question_type, question, marks)
+            VALUES (?, ?, ?, ?)`;
 
-        const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, questionTypeResult[0].type_name, question]);
-        
+        const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, questionTypeResult[0].type_id, question, marks]);
+
         const question_id = questionResult.insertId;
 
         const insertMCQQuestionQuery = `
             INSERT INTO mcq_questions (question_id, multiple_correct)
-            VALUES (?, ?)`;
+            VALUES (?, ?)
+        `;
+
+        // question_type is a numeric value that determines the type of MCQ question
+        // 0 => Single Correct
+        // 1 => Multi Correct
 
         const [mcqQuestionReqult] = await promisePool.query(insertMCQQuestionQuery, [question_id, question_type]);
 
@@ -186,6 +195,8 @@ router.post('/add-mcq', multer().single('question_image'), async (req, res) => {
         });
 
         insertOptionsQuery += insertOptionsValues.join(', ');
+
+        await promisePool.query(insertOptionsQuery);
 
         res.status(201).send({ message: 'MCQ question added successfully', question_id: question_id });
     } catch (e) {
