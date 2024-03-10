@@ -10,7 +10,7 @@ import promisePool from '../config/db.js';
 const router = express.Router();
 const logger = new Logger();
 
-router.get('/', authenticate(['staff','admin', 'student']), async (req, res) => {
+router.get('/', authenticate(['staff', 'admin', 'student']), async (req, res) => {
 
     SetHeader('content-type', 'application/json');
 
@@ -48,7 +48,7 @@ router.get('/', authenticate(['staff','admin', 'student']), async (req, res) => 
     }
 });
 
-router.post('/', authenticate(['staff','admin', 'student']), async (req, res) => {
+router.post('/', authenticate(['staff', 'admin', 'student']), async (req, res) => {
     SetHeader('content-type', 'application/json');
 
     // Comment these if using local server
@@ -61,57 +61,91 @@ router.post('/', authenticate(['staff','admin', 'student']), async (req, res) =>
     try {
         const test_cases = req.body.test_case;
         const userId = req.userData.userId;
-        const questionId = 17; // caution here
         const languageId = req.body.language_id;
         const sourceCode = btoa(req.body.source_code);
 
-        const submissions = [];
+        if (req.body.questionId) {
+            const questionId = req.body.questionId;
 
-        test_cases.forEach((testCase) => {
-            const submission = {
-                language_id: languageId,
-                source_code: sourceCode,
-                stdin: btoa(testCase.input),
-                stdout: btoa(testCase.output),
-                expected_output: btoa(testCase.output)
+            const submissions = [];
+
+            test_cases.forEach((testCase) => {
+                const submission = {
+                    language_id: languageId,
+                    source_code: sourceCode,
+                    stdin: btoa(testCase.input),
+                    stdout: btoa(testCase.output),
+                    expected_output: btoa(testCase.output)
+                };
+
+                submissions.push(submission);
+            });
+
+            const body = {
+                submissions,
             };
 
-            submissions.push(submission);
-        });
+            const params = {
+                base64_encoded: true,
+            };
 
-        const body = {
-            submissions,
-        };
+            const response = await Request(
+                'POST',
+                'submissions/batch',
+                body,
+                params
+            );
 
-        const params = {
-            base64_encoded: true,
-        };
+            const tokens = response.data.map((submission) => submission.token);
 
-        const response = await Request(
-            'POST',
-            'submissions/batch',
-            body,
-            params
-        );
+            const dbInsertValues = {
+                student_id: userId,
+                question_id: questionId,
+                language: languageId,
+                source_code: sourceCode,
+                j_tokens: btoa(tokens),
+            }
 
-        const tokens = response.data.map((submission) => submission.token);
+            const [submission] = await promisePool.query(`INSERT INTO code_submissions SET ?`, dbInsertValues);
 
-        const dbInsertValues = {
-            student_id: userId,
-            question_id: questionId,
-            language: languageId,
-            source_code: sourceCode,
-            j_tokens: btoa(tokens),
+            const submissionId = submission.insertId;
+
+            res.status(201).send({ tokens });
+        } else {
+            const submissions = [];
+
+            test_cases.forEach((testCase) => {
+                const submission = {
+                    language_id: languageId,
+                    source_code: sourceCode,
+                    stdin: btoa(testCase.input),
+                };
+
+                submissions.push(submission);
+            });
+
+            const body = {
+                submissions,
+            };
+
+            const params = {
+                base64_encoded: true,
+            };
+
+            const response = await Request(
+                'POST',
+                'submissions/batch',
+                body,
+                params
+            );
+
+            const tokens = response.data.map((submission) => submission.token);
+
+            res.status(201).send({ tokens });
         }
-
-        const [submission] = await promisePool.query(`INSERT INTO code_submissions SET ?`, dbInsertValues);
-
-        const submissionId = submission.insertId;
-
-        res.status(201).send({ tokens });
     } catch (err) {
-        console.log(err);
-        res.status(500).send();
+        logger.error(err);
+        res.status(500).send(err);
     }
 });
 

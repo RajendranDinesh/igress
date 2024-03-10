@@ -80,14 +80,21 @@ router.get('/:test_id/:question_id', async (req, res) => {
 
 // POST /question/add-code - Add a code question to a test
 router.post('/add-code', async (req, res) => {
-    const { test_id, question_type, question, question_title, starter_code, allowed_languages, input_specification, output_specification, public_test_case, private_test_case } = req.body;
+    const { test_id, question, question_title, solution_code, allowed_languages, public_test_case, private_test_case, marks } = req.body;
 
     try {
-        const insertQuestionQuery = `
-            INSERT INTO questions (test_id, question_type, question, question_title)
-            VALUES (?, ?, ?, ?)`;
+        // get question type id
+        const questionTypeQuery = `SELECT type_id FROM question_type WHERE type_name = "code"`;
+        const [questionTypeResult] = await promisePool.query(questionTypeQuery);
 
-        const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, question_type, question, question_title]);
+        const question_type = questionTypeResult[0].type_id;
+
+
+        const insertQuestionQuery = `
+            INSERT INTO questions (test_id, question_type, question, question_title, marks)
+            VALUES (?, ?, ?, ?, ?)`;
+
+        const [questionResult] = await promisePool.query(insertQuestionQuery, [test_id, question_type, question, question_title, marks]);
         
         const question_id = questionResult.insertId;
 
@@ -95,28 +102,16 @@ router.post('/add-code', async (req, res) => {
         let placeholders = [];
         let queryParams = [];
 
-        if (starter_code !== undefined) {
-            insertFields.push('starter_code');
+        if (solution_code !== undefined) {
+            insertFields.push('solution_code');
             placeholders.push('?');
-            queryParams.push(starter_code);
+            queryParams.push(solution_code);
         }
 
         if (allowed_languages !== undefined) {
             insertFields.push('allowed_languages');
             placeholders.push('?');
             queryParams.push(JSON.stringify(allowed_languages));
-        }
-
-        if (input_specification !== undefined) {
-            insertFields.push('input_specification');
-            placeholders.push('?');
-            queryParams.push(input_specification);
-        }
-
-        if (output_specification !== undefined) {
-            insertFields.push('output_specification');
-            placeholders.push('?');
-            queryParams.push(output_specification);
         }
 
         if (public_test_case !== undefined) {
