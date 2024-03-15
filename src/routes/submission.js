@@ -74,7 +74,6 @@ router.post('/', authenticate(['staff', 'admin', 'student']), async (req, res) =
                     language_id: languageId,
                     source_code: sourceCode,
                     stdin: btoa(testCase.input),
-                    stdout: btoa(testCase.output),
                     expected_output: btoa(testCase.output)
                 };
 
@@ -119,6 +118,7 @@ router.post('/', authenticate(['staff', 'admin', 'student']), async (req, res) =
                     language_id: languageId,
                     source_code: sourceCode,
                     stdin: btoa(testCase.input),
+                    expected_output: btoa(testCase.output)
                 };
 
                 submissions.push(submission);

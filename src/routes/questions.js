@@ -6,7 +6,7 @@ import { Logger } from '../utils/logger.js';
 const router = express.Router();
 const logger = new Logger();
 
-// GET /question/:test_id - Get all questions for a test
+// GET /question/:test_id - Get all questions of a test
 router.get('/:test_id', async (req, res) => {
     const { test_id } = req.params;
 
@@ -37,6 +37,52 @@ router.get('/:test_id', async (req, res) => {
     }
 });
 
+// GET /question/:test_id/meta - Get metadata of all questions of a test
+router.get('/:test_id/meta', async (req, res) => {
+    const { test_id } = req.params;
+
+    try {
+        // data to return start time, end time, id and type of question
+        const query = `
+            SELECT
+                q.question_id AS id,
+                qt.type_name
+            FROM questions q
+            INNER JOIN question_type qt ON q.question_type = qt.type_id
+            WHERE q.test_id = ?;
+        `;
+
+        const [questions] = await promisePool.query(query, [test_id]);
+
+        const timeQuery = `
+            SELECT
+                ct.scheduled_at,
+                DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE) AS end_time
+            FROM tests t
+            INNER JOIN classroom_tests ct ON t.test_id = ct.test_id
+            WHERE t.test_id = ?;
+        `;
+
+        const [time] = await promisePool.query(timeQuery, [test_id]);
+
+        if (questions.length > 0 && time.length > 0) {
+            let meta = {
+                questions: questions,
+                startTime: time[0].scheduled_at,
+                endTime: time[0].end_time
+            }
+
+            return res.send(meta);
+        }
+
+        res.status(404).send('No questions found for the specified test.');
+    } catch (e) {
+        logger.error(e);
+        res.status(500).send('[QUESTION] Internal Server Error');
+    }
+});
+
+
 // GET /question/:test_id/:question_id - Get a specific question for a test
 router.get('/:test_id/:question_id', async (req, res) => {
     const { test_id, question_id } = req.params;
@@ -60,19 +106,40 @@ router.get('/:test_id/:question_id', async (req, res) => {
 
         switch (detailedQuestion.type_name.toLowerCase()) {
             case 'code':
-                const codeQuestionQuery = `SELECT * FROM code_questions WHERE question_id = ?`;
+                const codeQuestionQuery = `
+                    SELECT
+                        public_test_case,
+                        allowed_languages
+                    FROM code_questions WHERE question_id = ?
+                `;
+
                 const [codeDetails] = await promisePool.query(codeQuestionQuery, [question_id]);
+
                 detailedQuestion = { ...detailedQuestion, ...codeDetails[0] };
                 break;
-            case 'mcq':
-                const mcqQuestionQuery = `SELECT * FROM mcq_questions WHERE question_id = ?`;
-                const [mcqDetails] = await promisePool.query(mcqQuestionQuery, [question_id]);
 
-                const mcqOptionsQuery = `SELECT * FROM mcq_options WHERE mcq_question_id = ?`;
+            case 'mcq':
+                const mcqQuestionQuery = `
+                    SELECT
+                        mcq_question_id,
+                        multiple_correct
+                    FROM mcq_questions WHERE question_id = ?
+                `;
+                let [mcqDetails] = await promisePool.query(mcqQuestionQuery, [question_id]);
+
+                const mcqOptionsQuery = `
+                    SELECT
+                        option_text,
+                        mcq_option_id
+                    FROM mcq_options WHERE mcq_question_id = ?
+                `;
                 const [mcqOptions] = await promisePool.query(mcqOptionsQuery, [mcqDetails[0].mcq_question_id]);
+
+                delete mcqDetails[0].mcq_question_id;
 
                 detailedQuestion = { ...detailedQuestion, ...mcqDetails[0], options: mcqOptions };
                 break;
+
             // Future case for different question types
             // case 'multiple choice':
             //     // Fetch details specific to multiple choice questions
