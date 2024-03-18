@@ -67,7 +67,7 @@ router.get('/header/:id',authenticate(['supervisor']), async (req, res) => {
 
 router.post('/block-student/:id',authenticate(['supervisor']), async (req, res) => {
     try {
-        const [rows, fields] = await promisePool.query(
+        await promisePool.query(
             `UPDATE
                 users
             SET
@@ -76,7 +76,7 @@ router.post('/block-student/:id',authenticate(['supervisor']), async (req, res) 
                 blocked_by = ?
             WHERE
                 user_id = ?;`,
-            [req.body.student_id,req.body.block_reason,req.userData.userId]
+            [req.body.block_reason,req.userData.userId,req.body.student_id]
         );
         res.status(200).send({ message: "Student Blocked Successfully" });
     } catch (error) {
@@ -122,7 +122,7 @@ router.get('/active-blocked-students/:id',authenticate(['supervisor']), async (r
 }
 );
 
-router.get('/blocked-details/:id',authenticate(['supervisor']), async (req, res) => {
+router.get('/blocked-details/:id/:student_id',authenticate(['supervisor']), async (req, res) => {
     try {
 
         const [rows, fields] = await promisePool.query( `
@@ -138,9 +138,9 @@ router.get('/blocked-details/:id',authenticate(['supervisor']), async (req, res)
             users ub ON u.blocked_by = ub.user_id
         WHERE 
             u.user_id = ?;`
-        ,[req.body.student_id]);
+        ,[req.params.student_id]);
 
-        res.status(200).send({ blocked_setails: rows });
+        res.status(200).send({ blocked_details: rows });
     } catch (error) {
         console.log(error);
         res.status(500).send({ error: "Internal Server Error"});
