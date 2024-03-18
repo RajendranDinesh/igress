@@ -12,7 +12,7 @@ import supervisorRouter from './routes/supervisor.js';
 const app = express();
 
 const corsOptions = {
-    credentials: false,
+    credentials: true,
     origin: ['http://127.0.0.1:3000', 'http://localhost:3000', process.env.FRONTEND_URL],
 };
 
