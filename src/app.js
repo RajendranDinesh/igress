@@ -28,4 +28,10 @@ app.use('/api/submission', submissionRouter);
 app.use('/api/test', testRouter);
 app.use('/api/supervisor', supervisorRouter);
 
+app.get('/api/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+// export app
+
 export default app;
