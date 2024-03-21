@@ -38,21 +38,21 @@ router.get('/:test_id', async (req, res) => {
 });
 
 // GET /question/:test_id/meta - Get metadata of all questions of a test
-router.get('/:test_id/meta', async (req, res) => {
-    const { test_id } = req.params;
+router.get('/:classroom_test_id/meta', async (req, res) => {
+    const { classroom_test_id } = req.params;
 
     try {
-        // data to return start time, end time, id and type of question
         const query = `
             SELECT
                 q.question_id AS id,
                 qt.type_name
             FROM questions q
             INNER JOIN question_type qt ON q.question_type = qt.type_id
-            WHERE q.test_id = ?;
+            INNER JOIN classroom_tests ct on q.test_id = ct.test_id
+            WHERE ct.id = ?;
         `;
 
-        const [questions] = await promisePool.query(query, [test_id]);
+        const [questions] = await promisePool.query(query, [classroom_test_id]);
 
         const timeQuery = `
             SELECT
@@ -60,10 +60,10 @@ router.get('/:test_id/meta', async (req, res) => {
                 DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE) AS end_time
             FROM tests t
             INNER JOIN classroom_tests ct ON t.test_id = ct.test_id
-            WHERE t.test_id = ?;
+            WHERE ct.id = ?;
         `;
 
-        const [time] = await promisePool.query(timeQuery, [test_id]);
+        const [time] = await promisePool.query(timeQuery, [classroom_test_id]);
 
         if (questions.length > 0 && time.length > 0) {
             let meta = {
@@ -84,8 +84,8 @@ router.get('/:test_id/meta', async (req, res) => {
 
 
 // GET /question/:test_id/:question_id - Get a specific question for a test
-router.get('/:test_id/:question_id', async (req, res) => {
-    const { test_id, question_id } = req.params;
+router.get('/:classroom_test_id/:question_id', async (req, res) => {
+    const { classroom_test_id, question_id } = req.params;
 
     try {
         const baseQuestionQuery = `
@@ -94,9 +94,10 @@ router.get('/:test_id/:question_id', async (req, res) => {
                 qt.type_name
             FROM questions q
             INNER JOIN question_type qt ON q.question_type = qt.type_id
-            WHERE q.test_id = ? AND q.question_id = ?`;
+            INNER JOIN classroom_tests ct ON q.test_id = ct.test_id
+            WHERE ct.id = ? AND q.question_id = ?`;
 
-        const [baseQuestion] = await promisePool.query(baseQuestionQuery, [test_id, question_id]);
+        const [baseQuestion] = await promisePool.query(baseQuestionQuery, [classroom_test_id, question_id]);
 
         if (baseQuestion.length === 0) {
             return res.status(404).send('Question not found for the specified test.');
