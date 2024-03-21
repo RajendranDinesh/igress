@@ -22,7 +22,7 @@ router.get('/dashboard-data',authenticate(['supervisor']), async (req, res) => {
             join 
                 test_supervisors ts on cs.classroom_id = ts.classroom_id
             WHERE 
-                ts.supervisor_id = 3
+                ts.supervisor_id = ?
                 GROUP BY c.scheduled_at, t.test_id, t.title;`,
             [`${req.userData.userId}`]
         );
@@ -68,16 +68,19 @@ router.get('/header/:id',authenticate(['supervisor']), async (req, res) => {
 router.post('/block-student/:id',authenticate(['supervisor']), async (req, res) => {
     try {
         await promisePool.query(
-            `UPDATE
-                users
-            SET
-                is_active = 0,
-                block_reason = ?,
-                blocked_by = ?
-            WHERE
-                user_id = ?;`,
-            [req.body.block_reason,req.userData.userId,req.body.student_id]
+            `UPDATE users
+            SET is_active = 0,
+            num_of_blocks = num_of_blocks + 1
+            WHERE user_id = ?;`,
+            [req.body.student_id]
         );
+
+        await promisePool.query(
+            `INSERT INTO user_blocks (user_id, block_reason, blocked_by)
+            VALUES (?, ?, ?);`,
+            [req.body.student_id, req.body.block_reason, req.userData.userId]
+        );
+
         res.status(200).send({ message: "Student Blocked Successfully" });
     } catch (error) {
         console.log(error);
@@ -126,18 +129,20 @@ router.get('/blocked-details/:id/:student_id',authenticate(['supervisor']), asyn
     try {
 
         const [rows, fields] = await promisePool.query( `
-        SELECT 
-            u.roll_no, 
-            u.email, 
-            u.user_name, 
-            u.block_reason,
-            ub.user_name AS blocked_by_user_name
-        FROM 
-            users u
-        LEFT JOIN 
-            users ub ON u.blocked_by = ub.user_id
-        WHERE 
-            u.user_id = ?;`
+        SELECT
+            u.roll_no,
+            u.email,
+            u.user_name,
+            ub.block_reason,
+            blocked_by_user.user_name AS blocked_by_user_name
+        FROM
+            user_blocks ub
+        LEFT JOIN
+            users u ON ub.user_id = u.user_id
+        LEFT JOIN
+            users blocked_by_user ON ub.blocked_by = blocked_by_user.user_id
+        WHERE
+            ub.user_id = ?;`
         ,[req.params.student_id]);
 
         res.status(200).send({ blocked_details: rows });
@@ -156,7 +161,7 @@ router.get('/attendence/:id',authenticate(['supervisor']), async (req, res) => {
             u.user_id,
             u.user_name AS username,
             u.roll_no AS roll_number,
-            CASE WHEN a.student_id IS NOT NULL THEN 1 ELSE 0 END AS is_present
+            a.is_present
         FROM
             users u
         INNER JOIN
@@ -168,7 +173,7 @@ router.get('/attendence/:id',authenticate(['supervisor']), async (req, res) => {
         inner join
             test_supervisors ts on cs.classroom_id = ts.classroom_id
         WHERE
-            ts.test_id = ?
+            ct.test_id = ?
             AND u.is_active = 1;`
 
         const [users] = await promisePool.execute(supervisorSql, [req.params.id]);
@@ -183,11 +188,12 @@ router.get('/attendence/:id',authenticate(['supervisor']), async (req, res) => {
 
 router.post('/attendence-present/:id',authenticate(['supervisor']), async (req, res) => {
     try {
-        const [rows, fields] = await promisePool.query(
-            `INSERT INTO 
-                attendence_tab (student_id, test_id, tab_switch) 
-            VALUES 
-                (?, ?, 0);`,
+        const [rows, fields] = await promisePool.query(`
+            UPDATE attendence_tab
+            SET is_present = 1
+            WHERE student_id = ? 
+            AND test_id = ?;
+            `,
             [req.body.student_id,req.params.id]
         );
         res.status(200).send({ message: "Attendence Marked Successfully" });
@@ -200,12 +206,12 @@ router.post('/attendence-present/:id',authenticate(['supervisor']), async (req, 
 
 router.post('/attendence-absent/:id',authenticate(['supervisor']), async (req, res) => {
     try {
-        const [rows, fields] = await promisePool.query(
-            `DELETE FROM 
-                attendence_tab 
-            WHERE 
-                student_id = ? 
-                AND test_id = ?;`,
+        const [rows, fields] = await promisePool.query(`
+            UPDATE attendence_tab
+            SET is_present = 0
+            WHERE student_id = ? 
+            AND test_id = ?;
+            `,
             [req.body.student_id,req.params.id]
         );
         res.status(200).send({ message: "Attendence Marked Successfully" });

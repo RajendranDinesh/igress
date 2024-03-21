@@ -234,4 +234,106 @@ router.delete('/schedule/:classroom_id/:schedule_id', authenticate(['staff', 'ad
     }
 });
 
+// GET /test/:id/staff - fetch all the staff member name with the test id
+router.get('/:id/staff', authenticate(['staff']), async (req, res) => {
+    try {
+        const selectSql = `
+            SELECT u.user_name AS staff_name
+            FROM classroom_tests ct
+            JOIN classroom_staff cs ON ct.classroom_id = cs.classroom_id
+            JOIN users u ON cs.staff_id = u.user_id
+            WHERE ct.test_id = ?;
+        `;
+
+        const [staff] = await promisePool.execute(selectSql, [req.params.id]);
+        res.status(200).send(staff);
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /test/:id/supervisor - fetch all the supervisor name with the test id
+router.get('/:id/supervisor', authenticate(['staff']), async (req, res) => {
+    try {
+        const selectSql = `
+            SELECT u.user_name AS supervisor_name
+            FROM users u
+            JOIN test_supervisors ts ON u.user_id = ts.supervisor_id
+            WHERE ts.test_id = ?;
+        `;
+
+        const [supervisors] = await promisePool.execute(selectSql, [req.params.id]);
+
+        res.status(200).send(supervisors);
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+// "GET", `/test/${testId}/present-absent`
+router.get('/:id/present-absent', authenticate(['staff']), async (req, res) => {
+    try {
+        const selectSql = `
+            SELECT 
+                SUM(CASE WHEN is_present = 1 THEN 1 ELSE 0 END) AS present_count,
+                SUM(CASE WHEN is_present = 0 THEN 1 ELSE 0 END) AS absent_count
+            FROM 
+                attendence_tab
+            where
+                test_id = ?;
+        `;
+
+        const [students] = await promisePool.execute(selectSql, [req.params.id]);
+
+        res.status(200).send(students);
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
+//"GET", `/test/${testId}/marks`
+router.get('/:id/marks', authenticate(['staff']), async (req, res) => {
+    try {
+        const selectSql = `
+        SELECT 
+            u.user_name,
+            SUM(tm.mark_awarded) AS total_marks
+        FROM 
+            test_marks tm
+        INNER JOIN 
+            users u ON tm.student_id = u.user_id
+        where 
+            test_id = ?
+        GROUP BY 
+            u.user_name;
+        `;
+
+        const [marks] = await promisePool.execute(selectSql, [req.params.id]);
+
+        const selectSql1 = `
+        SELECT 
+            AVG(total_marks) AS overall_average_marks
+        FROM 
+            (SELECT 
+                SUM(mark_awarded) AS total_marks
+            FROM 
+                test_marks
+            where
+                test_id = ?
+            GROUP BY 
+                student_id) AS subquery;
+        `;
+
+        const [averageMarks] = await promisePool.execute(selectSql1, [req.params.id]);
+
+        res.status(200).send({marks, averageMarks});
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
 export default router;
