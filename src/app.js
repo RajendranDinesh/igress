@@ -8,6 +8,7 @@ import questionRouter from './routes/questions.js';
 import submissionRouter from './routes/submission.js';
 import testRouter from './routes/test.js';
 import supervisorRouter from './routes/supervisor.js';
+import studentRouter from './routes/student.js';
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/question', questionRouter);
 app.use('/api/submission', submissionRouter);
 app.use('/api/test', testRouter);
 app.use('/api/supervisor', supervisorRouter);
+app.use('/api/student', studentRouter);
 
 app.get('/api/health', (req, res) => {
     res.status(200).send('OK');
