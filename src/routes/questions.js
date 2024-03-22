@@ -2,6 +2,7 @@ import express from 'express';
 
 import promisePool from '../config/db.js';
 import { Logger } from '../utils/logger.js';
+import authenticate from '../utils/auth.js';
 
 const router = express.Router();
 const logger = new Logger();
@@ -82,6 +83,77 @@ router.get('/:classroom_test_id/meta', async (req, res) => {
     }
 });
 
+
+// GET /question/test/:test_id/:question_id/ - Get specific question for a test
+router.get('/test/:test_id/:question_id', authenticate(['staff', 'admin']), async (req, res) => {
+    const { test_id, question_id } = req.params;
+
+    try {
+        const baseQuestionQuery = `
+            SELECT 
+                q.*,
+                qt.type_name
+            FROM questions q
+            INNER JOIN question_type qt ON q.question_type = qt.type_id
+            WHERE q.test_id = ? AND q.question_id = ?`;
+
+        const [baseQuestion] = await promisePool.query(baseQuestionQuery, [test_id, question_id]);
+
+        if (baseQuestion.length === 0) {
+            return res.status(404).send('Question not found for the specified test.');
+        }
+
+        let detailedQuestion = baseQuestion[0];
+
+        switch (detailedQuestion.type_name.toLowerCase()) {
+            case 'code':
+                const codeQuestionQuery = `
+                    SELECT
+                        public_test_case,
+                        allowed_languages
+                    FROM code_questions WHERE question_id = ?
+                `;
+
+                const [codeDetails] = await promisePool.query(codeQuestionQuery, [question_id]);
+
+                detailedQuestion = { ...detailedQuestion, ...codeDetails[0] };
+                break;
+
+            case 'mcq':
+                const mcqQuestionQuery = `
+                    SELECT
+                        mcq_question_id,
+                        multiple_correct
+                    FROM mcq_questions WHERE question_id = ?
+                `;
+                let [mcqDetails] = await promisePool.query(mcqQuestionQuery, [question_id]);
+
+                const mcqOptionsQuery = `
+                    SELECT
+                        option_text,
+                        mcq_option_id
+                    FROM mcq_options WHERE mcq_question_id = ?
+                `;
+                const [mcqOptions] = await promisePool.query(mcqOptionsQuery, [mcqDetails[0].mcq_question_id]);
+
+                delete mcqDetails[0].mcq_question_id;
+
+                detailedQuestion = { ...detailedQuestion, ...mcqDetails[0], options: mcqOptions };
+                break;
+
+            // Future case for different question types
+            // case 'multiple choice':
+            //     // Fetch details specific to multiple choice questions
+            //     break;
+            // Add more cases as you introduce more question types
+        }
+
+        res.json(detailedQuestion);
+    } catch (e) {
+        logger.error(e);
+        res.status(500).send('[QUESTIONS] Internal Server Error');
+    }
+});
 
 // GET /question/:test_id/:question_id - Get a specific question for a test
 router.get('/:classroom_test_id/:question_id', async (req, res) => {

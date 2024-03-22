@@ -210,7 +210,7 @@ router.get('/id/:currentSubId', authenticate(['staff', 'admin', 'student']), asy
 
         const params = {
             tokens: jTokens,
-            fields: 'source_code,language_id,time,memory,status',
+            fields: 'time,memory,status',
             base64_encoded: true,
         }
 
@@ -221,10 +221,51 @@ router.get('/id/:currentSubId', authenticate(['staff', 'admin', 'student']), asy
             params
         )
 
-        const { submissions } = response.data;
+        let { submissions } = response.data;
 
-        res.status(200).send({ submissions, created_at: submission[0].created_at });
+        res.status(200).send({ submissions, created_at: submission[0].created_at, source_code: submission[0].source_code, language_id: submission[0].language });
     } catch (err) {
+        logger.error(err);
+        res.status(500).send(err);
+    }
+});
+
+
+router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), (req, res) => {
+    try {
+
+        const { classroomTestId } = req.params;
+
+        const { mcqAnswers } = req.body;
+
+        const studentId = req.userData.userId;
+
+        mcqAnswers.forEach((mcqAnswer) => {
+            const answerIds = mcqAnswer.answer;
+            const questionId = mcqAnswer.question_id;
+
+            let temp = answerIds.split(',');
+
+            temp.forEach(async (answerId) => {
+                if (answerId.length > 0) {
+
+                    const [mcqQuestions] = await promisePool.query(`
+                        SELECT mcq_question_id FROM mcq_questions
+                        WHERE question_id = ?
+                    `, [questionId]);
+
+                    await promisePool.query(`
+                        INSERT INTO mcq_submissions(student_id, mcq_question_id, mcq_option_id, classroom_test_id)
+                        VALUES(?, ?, ?, ?)`,
+                        [studentId, mcqQuestions[0].mcq_question_id, parseInt(answerId), parseInt(classroomTestId)]
+                    );
+                }
+            });
+        });
+
+        res.status(200).send("Done mf");
+
+    } catch (error) {
         logger.error(err);
         res.status(500).send(err);
     }
