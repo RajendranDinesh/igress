@@ -14,7 +14,7 @@ const app = express();
 
 const corsOptions = {
     credentials: true,
-    origin: ['http://127.0.0.1:3000', 'http://localhost:3000', process.env.FRONTEND_URL],
+    origin: [['http://127.0.0.1:3000', 'http://localhost:3000'].concat(process.env.FRONTEND_URL.split(','))]
 };
 
 app.use(expressStatusMonitor());
