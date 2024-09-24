@@ -130,7 +130,7 @@ router.get('/ongoingTest', authenticate(['student']), async (req, res) => {
             tests t ON t.test_id = ct.test_id
         WHERE 
             cs.student_id = ?
-            AND NOW() BETWEEN ct.scheduled_at AND DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE);
+            AND DATE_ADD(NOW(), INTERVAL 330 MINUTE)  BETWEEN ct.scheduled_at AND DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE);
         `,
         [`${req.userData.userId}`]
         );
@@ -158,7 +158,7 @@ router.get('/upcomingTest', authenticate(['student']), async (req, res) => {
             tests t ON t.test_id = ct.test_id
         WHERE 
             cs.student_id = ?
-            AND ct.scheduled_at > NOW();
+            AND ct.scheduled_at > DATE_ADD(NOW(), INTERVAL 330 MINUTE);
         `,
         [`${req.userData.userId}`]
         );
