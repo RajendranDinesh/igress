@@ -3,3 +3,4 @@
 models.sql
 /src/utils/app.log
 /request.rest
+/mysql_data/

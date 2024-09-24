@@ -9,12 +9,13 @@ import submissionRouter from './routes/submission.js';
 import testRouter from './routes/test.js';
 import supervisorRouter from './routes/supervisor.js';
 import studentRouter from './routes/student.js';
+import staffRouter from './routes/staff.js';
 
 const app = express();
 
 const corsOptions = {
     credentials: true,
-    origin: ['http://127.0.0.1:3000', 'http://localhost:3000', process.env.FRONTEND_URL],
+    origin: [['http://127.0.0.1:3000', 'http://localhost:3000'].concat(process.env.FRONTEND_URL.split(','))]
 };
 
 app.use(expressStatusMonitor());
@@ -29,6 +30,7 @@ app.use('/api/submission', submissionRouter);
 app.use('/api/test', testRouter);
 app.use('/api/supervisor', supervisorRouter);
 app.use('/api/student', studentRouter);
+app.use('/api/staff', staffRouter);
 
 app.get('/api/health', (req, res) => {
     res.status(200).send('OK');
