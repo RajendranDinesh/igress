@@ -114,5 +114,61 @@ router.get('/classroomTests/:id', authenticate(['student']), async (req, res) =>
 }
 );
 
+// ongoing test for that student
+router.get('/ongoingTest', authenticate(['student']), async (req, res) => {
+    try {
+        const [rows, fields] = await promisePool.query(`
+        SELECT 
+            c.name as class_name,t.title as test_title, ct.scheduled_at, t.duration_in_minutes
+        FROM 
+            classroom_student cs 
+        JOIN 
+            classrooms c ON cs.classroom_id = c.classroom_id 
+        JOIN 
+            classroom_tests ct ON ct.classroom_id = cs.classroom_id
+        JOIN 
+            tests t ON t.test_id = ct.test_id
+        WHERE 
+            cs.student_id = ?
+            AND NOW() BETWEEN ct.scheduled_at AND DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE);
+        `,
+        [`${req.userData.userId}`]
+        );
+        res.status(200).send({ tests: rows });
+    } catch (error) {
+        console.log(error);
+        res.status(500).send({ error: "Internal Server Error"});
+    }
+}
+);
+
+// upcoming test for that student
+router.get('/upcomingTest', authenticate(['student']), async (req, res) => {
+    try {
+        const [rows, fields] = await promisePool.query(`
+        SELECT 
+            c.name as class_name,t.title as test_title, ct.scheduled_at, t.duration_in_minutes
+        FROM 
+            classroom_student cs 
+        JOIN 
+            classrooms c ON cs.classroom_id = c.classroom_id 
+        JOIN 
+            classroom_tests ct ON ct.classroom_id = cs.classroom_id
+        JOIN 
+            tests t ON t.test_id = ct.test_id
+        WHERE 
+            cs.student_id = ?
+            AND ct.scheduled_at > NOW();
+        `,
+        [`${req.userData.userId}`]
+        );
+        res.status(200).send({ tests: rows });
+    } catch (error) {
+        console.log(error);
+        res.status(500).send({ error: "Internal Server Error"});
+    }
+}
+);
+
 
 export default router;

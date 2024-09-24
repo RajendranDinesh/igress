@@ -69,8 +69,7 @@ router.post('/block-student/:id',authenticate(['supervisor']), async (req, res) 
     try {
         await promisePool.query(
             `UPDATE users
-            SET is_active = 0,
-            num_of_blocks = num_of_blocks + 1
+            SET is_active = 0
             WHERE user_id = ?;`,
             [req.body.student_id]
         );
