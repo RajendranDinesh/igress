@@ -10,7 +10,8 @@ const authenticate = (allowedRoles = ['student']) => {
             const userId = decoded.userId;
 
             const query = `
-                SELECT r.role_name FROM user_roles ur
+                SELECT r.role_name, u.is_active FROM user_roles ur
+                JOIN users u ON u.user_id = ${userId}
                 JOIN roles r ON ur.role_id = r.role_id
                 WHERE ur.user_id = ?
             `;
@@ -23,6 +24,12 @@ const authenticate = (allowedRoles = ['student']) => {
 
             if (!hasAllowedRole) {
                 return res.status(403).send({ message: 'Access denied' });
+            }
+
+            const isActive = roles.some((role) => role.is_active ? true : false);
+
+            if (!isActive) {
+                return res.status(498).send({ message: '[AUTH] Account Inactive' });
             }
 
             req.userData = decoded;

@@ -47,7 +47,7 @@ router.post('/login', async (req, res) => {
         const { email, password } = req.body;
 
         const [users] = await promisePool.query(`
-            SELECT u.user_id, u.password_hash, r.role_name
+            SELECT u.user_id, u.password_hash, r.role_name, u.is_active
             FROM users u
             JOIN user_roles ur ON u.user_id = ur.user_id
             JOIN roles r ON ur.role_id = r.role_id
@@ -60,6 +60,12 @@ router.post('/login', async (req, res) => {
 
         if (!user || !await bcrypt.compare(password, user.password_hash)) {
             return res.status(401).send({ message: 'Invalid credentials' });
+        }
+
+        const isActive = users.some((user) => user.is_active ? true : false);
+
+        if (!isActive) {
+            return res.status(498).send({ message: '[AUTH] Account Inactive' });
         }
 
         const token = jwt.sign({ userId: user.user_id }, process.env.JWT_SECRET, { expiresIn: '1d' });
