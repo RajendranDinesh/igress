@@ -196,14 +196,6 @@ router.post('/schedule', authenticate(['staff', 'admin']), async (req, res) => {
         const insertSql = `INSERT INTO classroom_tests (classroom_id, test_id, scheduled_at, created_by) VALUES (?, ?, ?, ?)`;
         await promisePool.execute(insertSql, [classroom_id, test_id, scheduled_at, req.userData.userId]);
 
-        const attendenceSql = `
-        INSERT INTO attendence_tab (test_id, student_id, classroom_id)
-        SELECT ?, cs.student_id, ?
-        FROM classroom_student cs
-        WHERE cs.classroom_id = ?;
-        `
-        await promisePool.execute(attendenceSql, [test_id, classroom_id, classroom_id]);
-
         res.status(201).send({ message: 'Test scheduled in classroom successfully' });
     } catch (error) {
         logger.error(`[TEST] ${error}`);
