@@ -86,7 +86,7 @@ router.get('/classroomTests/:id', authenticate(['student']), async (req, res) =>
             ct.scheduled_at,
             CASE
                 WHEN ct.scheduled_at > NOW() THEN 'Upcoming'
-                WHEN DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE) < NOW() THEN
+                WHEN DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE) < DATE_ADD(NOW(), INTERVAL 330 MINUTE) THEN
                     CASE
                         WHEN a.is_present = 0 THEN 'Absent'
                         ELSE 'Attempted'
@@ -119,7 +119,7 @@ router.get('/ongoingTest', authenticate(['student']), async (req, res) => {
     try {
         const [rows, fields] = await promisePool.query(`
         SELECT 
-            c.name as class_name,t.title as test_title, ct.scheduled_at, t.duration_in_minutes
+            c.name as class_name,t.title as test_title, ct.scheduled_at, t.duration_in_minutes, t.test_id
         FROM 
             classroom_student cs 
         JOIN 
