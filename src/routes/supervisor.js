@@ -65,7 +65,7 @@ router.get('/header/:id',authenticate(['supervisor']), async (req, res) => {
 }
 );
 
-router.post('/block-student/:id',authenticate(['supervisor']), async (req, res) => {
+router.post('/block-student', authenticate(['supervisor']), async (req, res) => {
     try {
         await promisePool.query(
             `UPDATE users

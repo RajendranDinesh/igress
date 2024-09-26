@@ -3,6 +3,7 @@ import cors from 'cors';
 import expressStatusMonitor from 'express-status-monitor';
 
 import authRouter from './routes/auth.js';
+import adminRouter from './routes/admin.js';
 import classroomRouter from './routes/classroom.js';
 import questionRouter from './routes/questions.js';
 import submissionRouter from './routes/submission.js';
@@ -24,6 +25,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/auth', authRouter);
+app.use('/api/admin', adminRouter);
 app.use('/api/classroom', classroomRouter);
 app.use('/api/question', questionRouter);
 app.use('/api/submission', submissionRouter);
