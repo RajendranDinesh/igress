@@ -1,2 +1,6 @@
 /node_modules/
 .env
+models.sql
+/src/utils/app.log
+/request.rest
+/mysql_data/

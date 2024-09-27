@@ -1,11 +1,11 @@
-import axios from "axios";
+import axios from 'axios';
 
-const BASE_URL = "https://judge0-ce.p.rapidapi.com/";
+const BASE_URL = 'https://judge0-ce.p.rapidapi.com/';
 
 const instance = axios.create({
-  baseURL: BASE_URL,
-  timeout: 10 * 1000,
-  withCredentials: true
+    baseURL: BASE_URL,
+    timeout: 10 * 1000,
+    withCredentials: true,
 });
 
 instance.interceptors.request.use(
@@ -27,9 +27,9 @@ const RemoveHeader = (key) => {
 
 const Request = async (method, url, body, params) => {
     const requestOptions = {
-        method: method,
-        url: url,
-        params: params,
+        method,
+        url,
+        params,
         data: body,
     };
 
@@ -39,6 +39,6 @@ const Request = async (method, url, body, params) => {
     } catch (error) {
         throw error;
     }
-}
+};
 
 export { SetHeader, RemoveHeader, Request };

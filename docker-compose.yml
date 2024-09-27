@@ -1,0 +1,20 @@
+services:
+  igress_db:
+    image: mysql:latest
+    container_name: igress_db
+    environment:
+      MYSQL_USER: igress
+      MYSQL_PASSWORD: igress
+      MYSQL_DATABASE: igress
+      MYSQL_ROOT_PASSWORD: randomstuff
+      TZ: Asia/Kolkata
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+    driver:
+      local
