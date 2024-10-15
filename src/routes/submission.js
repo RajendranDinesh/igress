@@ -183,8 +183,8 @@ router.get('/get-all/:classroomTestId', authenticate(['staff', 'admin', 'student
 
         res.status(200).send({ submissions });
     } catch (error) {
-        logger.error(err);
-        res.status(500).send(err)
+        logger.error(error);
+        res.status(500).send(error)
     }
 });
 

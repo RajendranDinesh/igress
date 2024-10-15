@@ -119,7 +119,7 @@ router.get('/ongoingTest', authenticate(['student']), async (req, res) => {
     try {
         const [rows, fields] = await promisePool.query(`
         SELECT 
-            c.name as class_name,t.title as test_title, ct.scheduled_at, t.duration_in_minutes, t.test_id
+            c.name as class_name,t.title as test_title, ct.scheduled_at, t.duration_in_minutes, t.test_id, ct.id as classroom_test_id
         FROM 
             classroom_student cs 
         JOIN 
