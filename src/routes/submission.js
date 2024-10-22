@@ -10,6 +10,41 @@ import promisePool from '../config/db.js';
 const router = express.Router();
 const logger = new Logger();
 
+async function getSubmissions(tokens) {
+    SetHeader('content-type', 'application/json');
+
+    // Comment these if using local server
+    SetHeader('X-RapidAPI-Key', process.env.RAPIDAPI_KEY);
+    SetHeader('X-RapidAPI-Host', 'judge0-ce.p.rapidapi.com');
+
+    try {
+
+        if (!tokens) {
+            throw Error("Token not found..")
+        }
+
+        const params = {
+            tokens: tokens,
+            fields: 'source_code,language_id,stdin,expected_output,stdout,stderr,compile_output,time,memory,status',
+            base64_encoded: true,
+        }
+
+        const response = await Request(
+            'GET',
+            'submissions/batch',
+            null,
+            params
+        )
+
+        const { submissions } = response.data;
+
+        return submissions;
+    } catch (error) {
+        logger.error(error)
+        return [];
+    }
+}
+
 router.get('/', authenticate(['staff', 'admin', 'student']), async (req, res) => {
 
     SetHeader('content-type', 'application/json');
@@ -19,7 +54,6 @@ router.get('/', authenticate(['staff', 'admin', 'student']), async (req, res) =>
     SetHeader('X-RapidAPI-Host', 'judge0-ce.p.rapidapi.com');
 
     try {
-
         const tokens = req.query.tokens;
 
         if (!tokens) {
@@ -67,6 +101,8 @@ router.post('/', authenticate(['staff', 'admin', 'student']), async (req, res) =
         if (req.body.question_id) {
             const questionId = req.body.question_id;
             const classroomTestId = req.body.classroom_test_id;
+
+            if (!questionId || !classroomTestId) throw new Error("ClassroomTestId was not provided");
 
             const [privateTestCases] = await promisePool.query(`
                 SELECT private_test_case FROM code_questions
@@ -231,7 +267,7 @@ router.get('/id/:currentSubId', authenticate(['staff', 'admin', 'student']), asy
 });
 
 
-router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), (req, res) => {
+router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), async (req, res) => {
     try {
 
         const { classroomTestId } = req.params;
@@ -240,34 +276,85 @@ router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), (req
 
         const studentId = req.userData.userId;
 
-        mcqAnswers.forEach((mcqAnswer) => {
-            const answerIds = mcqAnswer.answer;
-            const questionId = mcqAnswer.question_id;
+        const [jTokens] = await promisePool.query(`
+            SELECT j_tokens
+            FROM code_submissions
+            WHERE classroom_test_id = ?
+            AND student_id = ?;
+            `, [parseInt(classroomTestId), parseInt(studentId)]);
 
-            let temp = answerIds.split(',');
+        if (jTokens && jTokens.length > 0) {
 
-            temp.forEach(async (answerId) => {
-                if (answerId.length > 0) {
+            let tokens = '';
 
-                    const [mcqQuestions] = await promisePool.query(`
-                        SELECT mcq_question_id FROM mcq_questions
-                        WHERE question_id = ?
-                    `, [questionId]);
+            let N = jTokens.length;
 
-                    await promisePool.query(`
-                        INSERT INTO mcq_submissions(student_id, mcq_question_id, mcq_option_id, classroom_test_id)
-                        VALUES(?, ?, ?, ?)`,
-                        [studentId, mcqQuestions[0].mcq_question_id, parseInt(answerId), parseInt(classroomTestId)]
-                    );
+            for (let index = 0; index < N; index++) {
+                if (index != 0) tokens += `&${jTokens[index].j_tokens}`;
+                else tokens = jTokens[index].j_tokens;
+            }
+        
+            const submissions = await getSubmissions(jTokens);
+
+            console.log(submissions);
+        }
+
+        if (mcqAnswers && mcqAnswers.length > 0) {
+            mcqAnswers.forEach(async (mcqAnswer) => {
+                const answerIds = mcqAnswer.answer;
+                const questionId = mcqAnswer.question_id;
+                let temp = answerIds.split(',');
+        
+                // Get the mcq_question_id, multiple_correct flag, and total marks for the question
+                const [mcqQuestions] = await promisePool.query(`
+                    SELECT mq.mcq_question_id, mq.multiple_correct, q.marks
+                    FROM mcq_questions mq
+                    JOIN questions q ON mq.question_id = q.question_id
+                    WHERE mq.question_id = ?`, [questionId]);
+                
+                const mcqQuestionId = mcqQuestions[0].mcq_question_id;
+                const multipleCorrect = mcqQuestions[0].multiple_correct;
+                const totalMarks = mcqQuestions[0].marks;
+        
+                // Get the correct options for the question
+                const [correctOptions] = await promisePool.query(`
+                    SELECT mcq_option_id FROM mcq_options
+                    WHERE mcq_question_id = ? AND is_correct = 1`, [mcqQuestionId]);
+        
+                const correctOptionIds = correctOptions.map(option => option.mcq_option_id);
+                const totalCorrectAnswers = correctOptionIds.length;
+        
+                // Calculate marks awarded
+                let marksAwarded = 0;
+        
+                if (multipleCorrect) {
+                    // If multiple correct answers are allowed, calculate partial marks based on the number of correct answers provided
+                    const correctAnswersProvided = temp.filter(answerId => correctOptionIds.includes(parseInt(answerId))).length;
+                    marksAwarded = (correctAnswersProvided / totalCorrectAnswers) * totalMarks;
+                } else {
+                    // If only one correct answer is allowed, check if the first provided answer is correct
+                    const isCorrect = correctOptionIds.includes(parseInt(temp[0]));
+                    marksAwarded = isCorrect ? totalMarks : 0;
                 }
+        
+                // Insert each answer with the calculated marks
+                temp.forEach(async (answerId) => {
+                    if (answerId.length > 0) {
+                        await promisePool.query(`
+                            INSERT INTO mcq_submissions(student_id, mcq_question_id, mcq_option_id, classroom_test_id, marks_awarded)
+                            VALUES(?, ?, ?, ?, ?)`,
+                            [studentId, mcqQuestionId, parseInt(answerId), parseInt(classroomTestId), marksAwarded]
+                        );
+                    }
+                });
             });
-        });
+        }
 
         res.status(200).send("Done mf");
 
     } catch (error) {
-        logger.error(err);
-        res.status(500).send(err);
+        logger.error(error);
+        res.status(500).send(error);
     }
 });
 
