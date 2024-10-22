@@ -10,6 +10,17 @@ import promisePool from '../config/db.js';
 const router = express.Router();
 const logger = new Logger();
 
+async function getSubmissionId(sourceCode, classroomTestId, studentId) {
+    const [submissionId] = await promisePool.query(`
+        SELECT submission_id
+        FROM code_submissions
+        WHERE classroom_test_id = ?
+        AND student_id = ? AND source_code = ? ORDER BY submission_id DESC LIMIT 1;
+        `, [parseInt(classroomTestId), parseInt(studentId), sourceCode.trim()]);
+
+    return submissionId[0].submission_id;
+}
+
 async function getSubmissions(tokens) {
     SetHeader('content-type', 'application/json');
 
@@ -277,7 +288,7 @@ router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), asyn
         const studentId = req.userData.userId;
 
         const [jTokens] = await promisePool.query(`
-            SELECT j_tokens
+            SELECT question_id, submission_id, j_tokens
             FROM code_submissions
             WHERE classroom_test_id = ?
             AND student_id = ?;
@@ -290,13 +301,53 @@ router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), asyn
             let N = jTokens.length;
 
             for (let index = 0; index < N; index++) {
-                if (index != 0) tokens += `&${jTokens[index].j_tokens}`;
-                else tokens = jTokens[index].j_tokens;
+                if (index != 0) tokens += `,${atob(jTokens[index].j_tokens)}`;
+                else tokens = atob(jTokens[index].j_tokens);
             }
         
-            const submissions = await getSubmissions(jTokens);
+            const submissions = await getSubmissions(tokens);
 
-            console.log(submissions);
+            let tokenArray = tokens.split(',');
+            let index = 0;
+
+            for (const submission of submissions) {
+                const submissionId = await getSubmissionId(submission.source_code, classroomTestId, studentId);
+
+                await promisePool.query(`
+                    INSERT INTO code_submission_result (submission_id, status, time, memory, j_token) VALUES (?, ?, ?, ?, ?)
+                    `, [
+                        submissionId,
+                        submission.status.description,
+                        submission.time,
+                        submission.memory,
+                        tokenArray[index]
+                ]);
+
+                index += 1;
+            }
+
+            for (const submission of jTokens) {
+                const [submissions] = await promisePool.query(`
+                    SELECT status FROM code_submission_result
+                    WHERE submission_id = ?
+                `, [submission.submission_id]);
+
+                let [marks] = await promisePool.query(`
+                    SELECT marks FROM questions
+                    WHERE question_id = ?
+                `, [submission.question_id]);
+
+                marks = marks[0].marks;
+
+                submissions.forEach(submission => {
+                    if (submission.status != 'Accepted') marks = 0;
+                });
+
+                await promisePool.query(`
+                    UPDATE code_submissions SET marks_awarded = ?
+                    WHERE submission_id = ?
+                `, [marks, submission.submission_id]);
+            }
         }
 
         if (mcqAnswers && mcqAnswers.length > 0) {
