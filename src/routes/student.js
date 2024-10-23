@@ -118,19 +118,30 @@ router.get('/classroomTests/:id', authenticate(['student']), async (req, res) =>
 router.get('/ongoingTest', authenticate(['student']), async (req, res) => {
     try {
         const [rows, fields] = await promisePool.query(`
-        SELECT 
-            c.name as class_name,t.title as test_title, ct.scheduled_at, t.duration_in_minutes, t.test_id, ct.id as classroom_test_id
+        SELECT * FROM freedb_igress.users;SELECT 
+            c.name AS class_name,
+            t.title AS test_title,
+            ct.scheduled_at,
+            t.duration_in_minutes,
+            t.test_id,
+            ct.id AS classroom_test_id
         FROM 
-            classroom_student cs 
+            classroom_student cs
         JOIN 
-            classrooms c ON cs.classroom_id = c.classroom_id 
+            classrooms c ON cs.classroom_id = c.classroom_id
         JOIN 
             classroom_tests ct ON ct.classroom_id = cs.classroom_id
         JOIN 
             tests t ON t.test_id = ct.test_id
+        LEFT JOIN 
+            submitted_status s ON s.classroom_test_id = ct.id 
+                            AND s.user_id = cs.student_id
         WHERE 
             cs.student_id = ?
-            AND DATE_ADD(NOW(), INTERVAL 330 MINUTE)  BETWEEN ct.scheduled_at AND DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE);
+            AND DATE_ADD(NOW(), INTERVAL 330 MINUTE) 
+                BETWEEN ct.scheduled_at 
+                AND DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE)
+            AND s.classroom_test_id IS NULL;
         `,
         [`${req.userData.userId}`]
         );

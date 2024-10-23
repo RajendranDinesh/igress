@@ -444,7 +444,13 @@ router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), asyn
             });
         }
 
-        res.status(200).send("Done mf");
+        // update the data into the table submitted_status
+        await promisePool.query(`
+            INSERT INTO submitted_status(user_id, classroom_test_id)
+            VALUES(?, ?)`, [studentId, parseInt(classroomTestId)]
+        );
+
+        res.status(200).send("Done");
 
     } catch (error) {
         logger.error(error);
