@@ -34,22 +34,61 @@ async function getSubmissions(tokens) {
             throw Error("Token not found..")
         }
 
-        const params = {
-            tokens: tokens,
-            fields: 'source_code,language_id,stdin,expected_output,stdout,stderr,compile_output,time,memory,status',
-            base64_encoded: true,
+        let tokenArray = tokens.split(',');
+
+        const LENGTH = tokenArray.length;
+
+        let result = [];
+
+        // judge0 could only return batches of 20 submissions so we have to request for submissions in seperate batches...
+
+        if (LENGTH < 20) {
+            const params = {
+                tokens: tokens,
+                fields: 'source_code,language_id,stdin,expected_output,stdout,stderr,compile_output,time,memory,status',
+                base64_encoded: true,
+            }
+    
+            const response = await Request(
+                'GET',
+                'submissions/batch',
+                null,
+                params
+            )
+    
+            const { submissions } = response.data;
+    
+            return submissions;
+        } else {
+            let rem = (LENGTH)%20;
+
+            let count = Math.floor(LENGTH/20);
+
+            if (rem > 0) count++;
+
+            for (let i = 0; i < count; i++) {
+
+                const params = {
+                    tokens: tokenArray.slice(i*20, (i+1)*20).join(','),
+                    fields: 'source_code,language_id,stdin,expected_output,stdout,stderr,compile_output,time,memory,status',
+                    base64_encoded: true,
+                }
+
+                const response = await Request(
+                    'GET',
+                    'submissions/batch',
+                    null,
+                    params
+                )
+
+                const { submissions } = response.data;
+
+                result = result.concat(submissions);
+            }
         }
 
-        const response = await Request(
-            'GET',
-            'submissions/batch',
-            null,
-            params
-        )
-
-        const { submissions } = response.data;
-
-        return submissions;
+        return result;
+        
     } catch (error) {
         logger.error(error)
         return [];
@@ -307,6 +346,10 @@ router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), asyn
         
             const submissions = await getSubmissions(tokens);
 
+            if (submissions.length === 0) {
+                throw new Error("Could not retrieve submissions.");
+            }
+
             let tokenArray = tokens.split(',');
             let index = 0;
 
@@ -405,7 +448,7 @@ router.post('/submit/:classroomTestId', authenticate(['staff', 'student']), asyn
 
     } catch (error) {
         logger.error(error);
-        res.status(500).send(error);
+        res.status(500).send(error.toString());
     }
 });
 
