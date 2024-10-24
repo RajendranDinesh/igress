@@ -185,21 +185,39 @@ router.get('/', authenticate(["admin"]), async (req, res) => {
 
 // POST /test/schedule - Schedule a test in a classroom
 router.post('/schedule', authenticate(['staff', 'admin']), async (req, res) => {
+    let { classroom_id, test_id, scheduled_at, supervisor_id } = req.body;
+
+    let connection = await promisePool.getConnection();
+
     try {
-        let { classroom_id, test_id, scheduled_at } = req.body;
-        if (!classroom_id || !test_id || !scheduled_at) {
-            return res.status(400).send({ error: 'Classroom ID, Test ID, and Scheduled Time are required' });
+        await connection.beginTransaction();
+
+        if (!classroom_id || !test_id || !scheduled_at || !supervisor_id) {
+            return res.status(400).send({ error: 'Some reqired field is missing.' });
         }
 
         scheduled_at = moment(scheduled_at).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
 
         const insertSql = `INSERT INTO classroom_tests (classroom_id, test_id, scheduled_at, created_by) VALUES (?, ?, ?, ?)`;
-        await promisePool.execute(insertSql, [classroom_id, test_id, scheduled_at, req.userData.userId]);
+        const [result] = await connection.query(insertSql, [classroom_id, test_id, scheduled_at, req.userData.userId]);
+
+        const supervisorInsert = `
+            INSERT INTO freedb_igress.test_supervisors
+            (classroom_test_id, supervisor_id)
+            VALUES (?, ?), (?, ?);
+        `;
+        await connection.execute(supervisorInsert, [result.insertId, supervisor_id, result.insertId, req.userData.userId]);
+
+        await connection.commit();
 
         res.status(201).send({ message: 'Test scheduled in classroom successfully' });
     } catch (error) {
+        await connection.rollback();
+
         logger.error(`[TEST] ${error}`);
         res.status(500).send({ error: 'Internal Server Error' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -260,7 +278,7 @@ router.get('/:id/supervisor', authenticate(['staff']), async (req, res) => {
             SELECT u.user_name AS supervisor_name
             FROM users u
             JOIN test_supervisors ts ON u.user_id = ts.supervisor_id
-            WHERE ts.test_id = ?;
+            WHERE ts.classroom_test_id = ?;
         `;
 
         const [supervisors] = await promisePool.execute(selectSql, [req.params.id]);
