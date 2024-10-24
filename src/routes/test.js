@@ -256,7 +256,7 @@ router.delete('/schedule/:classroom_id/:schedule_id', authenticate(['staff', 'ad
 router.get('/:id/staff', authenticate(['staff']), async (req, res) => {
     try {
         const selectSql = `
-            SELECT u.user_name AS staff_name
+            SELECT distinct(u.user_name) AS staff_name
             FROM classroom_tests ct
             JOIN classroom_staff cs ON ct.classroom_id = cs.classroom_id
             JOIN users u ON cs.staff_id = u.user_id

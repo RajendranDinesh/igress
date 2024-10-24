@@ -28,20 +28,26 @@ router.get('/dashboard-data',authenticate(['supervisor']), async (req, res) => {
     try {
         const [rows] = await promisePool.query(
             `SELECT 
+                c.id, 
+                t.title, 
+                t.test_id, 
                 c.scheduled_at,
-                t.test_id, t.title,
                 COUNT(cs.student_id) AS total_students 
             FROM 
                 classroom_tests c 
             JOIN 
-                tests t ON c.test_id = t.test_id 
-            LEFT JOIN 
-                classroom_student cs ON c.classroom_id = cs.classroom_id 
-            join 
-                test_supervisors ts on cs.classroom_id = ts.classroom_id
-            WHERE 
+                tests t ON t.test_id = c.test_id 
+            JOIN 
+                classroom_student cs ON cs.classroom_id = c.classroom_id 
+            JOIN
+                test_supervisors ts ON ts.classroom_test_id = c.id
+            where
                 ts.supervisor_id = ?
-                GROUP BY c.scheduled_at, t.test_id, t.title;`,
+            GROUP BY 
+                c.id, 
+                t.test_id, 
+                t.title,
+                c.scheduled_at;`,
             [`${req.userData.userId}`]
         );
         res.status(200).send({ tests: rows });
