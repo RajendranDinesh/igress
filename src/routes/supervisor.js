@@ -5,10 +5,28 @@ import authenticate from '../utils/auth.js';
 
 const router = express.Router();
 
+router.get('/all', authenticate(['staff']), async(req, res) => {
+    try {
+        const [rows] = await promisePool.query(`
+            SELECT u.email, u.user_name, u.roll_no AS supervisor_id, u.user_id
+            FROM users u
+            JOIN user_roles ur ON u.user_id = ur.user_id
+            JOIN roles r ON r.role_id = ur.role_id
+            WHERE r.role_name = 'supervisor'
+            GROUP BY u.email;
+        `);
+        
+        res.status(200).send({ supervisors: rows });
+    } catch (error) {
+        console.log(error);
+        res.status(500).send({ error: "Internal Server Error"});
+    }
+});
+
 // supervisor dashboard data - title, test_id, scheduled date, total number of student
 router.get('/dashboard-data',authenticate(['supervisor']), async (req, res) => {
     try {
-        const [rows, fields] = await promisePool.query(
+        const [rows] = await promisePool.query(
             `SELECT 
                 c.id, 
                 t.title, 
