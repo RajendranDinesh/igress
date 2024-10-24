@@ -47,20 +47,23 @@ router.get('/header/:id',authenticate(['supervisor']), async (req, res) => {
     try {
         const [rows, fields] = await promisePool.query(
             `SELECT 
-                t.title,
+                c.id,
+                t.title, 
                 COUNT(cs.student_id) AS total_students 
             FROM 
                 classroom_tests c 
             JOIN 
-                tests t ON c.test_id = t.test_id 
-            LEFT JOIN 
-                classroom_student cs ON c.classroom_id = cs.classroom_id 
-            join 
-                test_supervisors ts on cs.classroom_id = ts.classroom_id
-            WHERE 
-                ts.supervisor_id = ?
-                AND c.test_id = ?
-                GROUP BY t.title;`,
+                tests t ON t.test_id = c.test_id 
+            JOIN 
+                classroom_student cs ON cs.classroom_id = c.classroom_id 
+            JOIN
+                test_supervisors ts ON ts.classroom_test_id = c.id
+            where
+                ts.supervisor_id = ? and
+                c.id = ?
+            GROUP BY 
+                c.id,
+                t.title;`,
             [`${req.userData.userId}`,req.params.id]
         );
         res.status(200).send({ test: rows });
@@ -81,8 +84,8 @@ router.post('/block-student', authenticate(['supervisor']), async (req, res) => 
         );
 
         await promisePool.query(
-            `INSERT INTO user_blocks (user_id, block_reason, blocked_by)
-            VALUES (?, ?, ?);`,
+            `INSERT INTO user_blocks (is_active, user_id, block_reason, blocked_by)
+            VALUES (1, ?, ?, ?);`,
             [req.body.student_id, req.body.block_reason, req.userData.userId]
         );
 
@@ -100,25 +103,25 @@ router.get('/active-blocked-students/:id',authenticate(['supervisor']), async (r
 
         const supervisorSql = `
         SELECT 
-            u.user_id, 
-            u.roll_no, 
-            u.email, 
-            u.user_name,
-            u.is_active,
-            a.tab_switch
-        FROM 
-            classroom_tests ct 
-        JOIN 
-            classroom_student cs ON ct.classroom_id = cs.classroom_id 
-        JOIN 
-            users u ON cs.student_id = u.user_id 
-        join 
-            test_supervisors ts on cs.classroom_id = ts.classroom_id
-		LEFT JOIN
-            attendence_tab a ON u.user_id = a.student_id AND ct.test_id = a.test_id
-        WHERE 
-            ct.test_id = ?
-            AND ts.supervisor_id = ?`;
+                c.id, 
+                u.user_id, 
+				u.roll_no, 
+				u.email, 
+				u.user_name,
+				u.is_active,
+                COALESCE(a.tab_switch, 0) AS tab_switch
+            FROM 
+                classroom_tests c 
+            JOIN 
+                classroom_student cs ON cs.classroom_id = c.classroom_id 
+			JOIN
+				users u on cs.student_id = u.user_id
+            JOIN
+                test_supervisors ts ON ts.classroom_test_id = c.id
+			LEFT JOIN
+				attendence_tab a ON u.user_id = a.student_id AND c.test_id = a.classroom_test_id
+            where
+                c.id = ? and ts.supervisor_id = ?;`;
 
         const [users] = await promisePool.execute(supervisorSql, [req.params.id,req.userData.userId]);
 
@@ -162,24 +165,24 @@ router.get('/attendence/:id',authenticate(['supervisor']), async (req, res) => {
     try {
 
         const supervisorSql = `
-        SELECT 
+        select
             u.user_id,
             u.user_name AS username,
             u.roll_no AS roll_number,
-            a.is_present
-        FROM
-            users u
-        INNER JOIN
-            classroom_student cs ON u.user_id = cs.student_id
-        INNER JOIN
-            classroom_tests ct ON cs.classroom_id = ct.classroom_id
-        LEFT JOIN
-            attendence_tab a ON u.user_id = a.student_id AND ct.test_id = a.test_id
-        inner join
-            test_supervisors ts on cs.classroom_id = ts.classroom_id
-        WHERE
-            ct.test_id = ?
-            AND u.is_active = 1;`
+            CASE 
+                WHEN a.student_id IS NOT NULL THEN 1 
+                ELSE 0 
+            END AS is_present
+        from
+            classroom_tests ct
+        join
+            classroom_student cs on cs.classroom_id = ct.classroom_id
+        join
+            users u on cs.student_id = u.user_id
+        join
+            attendence_tab a on ct.id = a.classroom_test_id
+        where
+            ct.id = ? and u.is_active = 1;`
 
         const [users] = await promisePool.execute(supervisorSql, [req.params.id]);
 
@@ -193,14 +196,22 @@ router.get('/attendence/:id',authenticate(['supervisor']), async (req, res) => {
 
 router.post('/attendence-present/:id',authenticate(['supervisor']), async (req, res) => {
     try {
+        // const [rows, fields] = await promisePool.query(`
+        //     UPDATE attendence_tab
+        //     SET is_present = 1
+        //     WHERE student_id = ? 
+        //     AND test_id = ?;
+        //     `,
+        //     [req.body.student_id,req.params.id]
+        // );
         const [rows, fields] = await promisePool.query(`
-            UPDATE attendence_tab
-            SET is_present = 1
-            WHERE student_id = ? 
-            AND test_id = ?;
+            INSERT INTO attendence_tab (student_id, classroom_test_id, tab_switch)
+            VALUES (?, ?, 0)
+            ON DUPLICATE KEY UPDATE is_present = 1;
             `,
-            [req.body.student_id,req.params.id]
+            [req.body.student_id, req.params.id]
         );
+
         res.status(200).send({ message: "Attendence Marked Successfully" });
     } catch (error) {
         console.log(error);
@@ -212,12 +223,11 @@ router.post('/attendence-present/:id',authenticate(['supervisor']), async (req, 
 router.post('/attendence-absent/:id',authenticate(['supervisor']), async (req, res) => {
     try {
         const [rows, fields] = await promisePool.query(`
-            UPDATE attendence_tab
-            SET is_present = 0
+            DELETE FROM attendence_tab
             WHERE student_id = ? 
-            AND test_id = ?;
+            AND classroom_test_id = ?;
             `,
-            [req.body.student_id,req.params.id]
+            [req.body.student_id, req.params.id]
         );
         res.status(200).send({ message: "Attendence Marked Successfully" });
     } catch (error) {
