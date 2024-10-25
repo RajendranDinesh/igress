@@ -252,7 +252,34 @@ router.delete('/schedule/:classroom_id/:schedule_id', authenticate(['staff', 'ad
     }
 });
 
-// GET /test/:id/staff - fetch all the staff member name with the test id
+//GET /test/:id/completed-test - fetch all the completed test with classroom test id
+router.get('/:id/completed-test', authenticate(['staff']), async (req, res) => {
+    try {
+        const selectSql = `
+        SELECT 
+            ct.id AS classroom_test_id, 
+            t.title AS test_title, 
+            t.duration_in_minutes AS test_duration, 
+            ct.scheduled_at AS scheduled_time
+        FROM 
+            classroom_tests ct
+        JOIN 
+            tests t ON ct.test_id = t.test_id
+        WHERE 
+            DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE) < NOW() and 
+            ct.classroom_id = ?;    
+        `;
+    
+    const [staff] = await promisePool.execute(selectSql, [req.params.id]);
+    res.status(200).send(staff);
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+
+});
+
+// GET /test/:id/staff - fetch all the staff member name with the classroom test id
 router.get('/:id/staff', authenticate(['staff']), async (req, res) => {
     try {
         const selectSql = `
