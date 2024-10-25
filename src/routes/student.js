@@ -5,6 +5,26 @@ import authenticate from '../utils/auth.js';
 
 const router = express.Router();
 
+// student/all - gets data of all students, to be used only by admin
+router.get('/all', authenticate(['admin']), async (_, res) => {
+    try {
+        const [rows,] = await promisePool.query(`
+            SELECT 
+                u.email, u.user_name, u.roll_no, u.created_at, u.is_active AS status
+            FROM users u
+            JOIN user_roles ur ON u.user_id = ur.user_id
+            JOIN roles r ON r.role_id = ur.role_id
+            WHERE r.role_name = 'student'
+            GROUP BY u.email;
+            `,
+        );
+        res.status(200).send({ staffs: rows });
+    } catch (error) {
+        logger.error(error);
+        res.status(500).send({ error: "Internal Server Error"});
+    }
+});
+
 // student dashboard data - authenticated student after that return the classroom title and description of that students
 router.get('/classrooms',authenticate(['student']), async (req, res) => {
     try {
