@@ -197,7 +197,7 @@ router.get('/attendence/:id',authenticate(['supervisor']), async (req, res) => {
             classroom_student cs on cs.classroom_id = ct.classroom_id
         join
             users u on cs.student_id = u.user_id
-        join
+        left join
             attendence_tab a on ct.id = a.classroom_test_id
         where
             ct.id = ? and u.is_active = 1;`
@@ -223,11 +223,10 @@ router.post('/attendence-present/:id',authenticate(['supervisor']), async (req, 
         //     [req.body.student_id,req.params.id]
         // );
         const [rows, fields] = await promisePool.query(`
-            INSERT INTO attendence_tab (student_id, classroom_test_id, tab_switch)
-            VALUES (?, ?, 0)
-            ON DUPLICATE KEY UPDATE is_present = 1;
+            INSERT IGNORE INTO attendence_tab (classroom_test_id, student_id, tab_switch)
+            VALUES (?, ?, 0);
             `,
-            [req.body.student_id, req.params.id]
+            [ req.params.id, req.body.student_id]
         );
 
         res.status(200).send({ message: "Attendence Marked Successfully" });
