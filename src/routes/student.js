@@ -118,7 +118,7 @@ router.get('/classroomTests/:id', authenticate(['student']), async (req, res) =>
 router.get('/ongoingTest', authenticate(['student']), async (req, res) => {
     try {
         const [rows, fields] = await promisePool.query(`
-        SELECT * FROM freedb_igress.users;SELECT 
+        SELECT 
             c.name AS class_name,
             t.title AS test_title,
             ct.scheduled_at,

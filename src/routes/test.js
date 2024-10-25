@@ -354,4 +354,29 @@ router.get('/:id/marks', authenticate(['staff']), async (req, res) => {
     }
 });
 
+// GET /test/:classroomTestId/metadata - data sent before starting the test
+router.get('/:classroomTestId/metadata', authenticate(['student']), async (req, res) => {
+    const { classroomTestId } = req.params;
+
+    const studentId = req.userData.userId;
+
+    try {
+        const attendenceMarkedQuery = `
+            SELECT IF(EXISTS(
+                SELECT 1 FROM attendence_tab 
+                WHERE classroom_test_id = ? AND student_id = ?
+            ), TRUE, FALSE) AS is_present;
+        `;
+
+        const [attendenceResult] = await promisePool.execute(attendenceMarkedQuery, [classroomTestId, studentId]);
+
+        res.status(200).send({
+            is_present: attendenceResult[0].is_present ? true : false
+        });
+    } catch (error) {
+        logger.error(`[TEST] ${error}`);
+        res.status(500).send({ error: 'Internal Server Error' });
+    }
+});
+
 export default router;
