@@ -11,10 +11,10 @@ router.get('/dashboard', authenticate(['admin']), async (_, res) => {
     try {
         const [rows,] = await promisePool.query(`
             SELECT 
-                r.role_name AS role, COUNT(DISTINCT u.user_id) AS staff_count
+                r.role_name AS role, COUNT(DISTINCT u.user_id) AS count
             FROM users u
-            JOIN user_roles ur ON u.user_id = ur.user_id
-            JOIN roles r ON r.role_id = ur.role_id
+            LEFT JOIN user_roles ur ON u.user_id = ur.user_id
+            LEFT JOIN roles r ON r.role_id = ur.role_id
             GROUP BY r.role_id;
             `,
         );

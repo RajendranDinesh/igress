@@ -202,7 +202,7 @@ router.post('/schedule', authenticate(['staff', 'admin']), async (req, res) => {
         const [result] = await connection.query(insertSql, [classroom_id, test_id, scheduled_at, req.userData.userId]);
 
         const supervisorInsert = `
-            INSERT INTO freedb_igress.test_supervisors
+            INSERT INTO test_supervisors
             (classroom_test_id, supervisor_id)
             VALUES (?, ?), (?, ?);
         `;
@@ -266,8 +266,8 @@ router.get('/:id/completed-test', authenticate(['staff']), async (req, res) => {
         JOIN 
             tests t ON ct.test_id = t.test_id
         WHERE 
-            DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE) < NOW() and 
-            ct.classroom_id = ?;    
+            DATE_ADD(ct.scheduled_at, INTERVAL t.duration_in_minutes MINUTE) < DATE_ADD(NOW(), INTERVAL 330 MINUTE) AND 
+            ct.classroom_id = ?;   
         `;
     
     const [staff] = await promisePool.execute(selectSql, [req.params.id]);
@@ -282,12 +282,13 @@ router.get('/:id/completed-test', authenticate(['staff']), async (req, res) => {
 // GET /test/:id/staff - fetch all the staff member name with the classroom test id
 router.get('/:id/staff', authenticate(['staff']), async (req, res) => {
     try {
+        console.log(req.params.id);
         const selectSql = `
-            SELECT distinct(u.user_name) AS staff_name
+            SELECT u.user_name AS staff_name
             FROM classroom_tests ct
             JOIN classroom_staff cs ON ct.classroom_id = cs.classroom_id
             JOIN users u ON cs.staff_id = u.user_id
-            WHERE ct.test_id = ?;
+            WHERE ct.id = ?;
         `;
 
         const [staff] = await promisePool.execute(selectSql, [req.params.id]);
@@ -322,12 +323,18 @@ router.get('/:id/present-absent', authenticate(['staff']), async (req, res) => {
     try {
         const selectSql = `
             SELECT 
-                SUM(CASE WHEN is_present = 1 THEN 1 ELSE 0 END) AS present_count,
-                SUM(CASE WHEN is_present = 0 THEN 1 ELSE 0 END) AS absent_count
+                COUNT(CASE WHEN a.student_id IS NOT NULL THEN 1 END) AS present_count,
+                COUNT(CASE WHEN a.student_id IS NULL THEN 1 END) AS absent_count
             FROM 
-                attendence_tab
-            where
-                test_id = ?;
+                classroom_tests ct
+            JOIN
+                classroom_student cs ON cs.classroom_id = ct.classroom_id
+            JOIN
+                users u ON u.user_id = cs.student_id
+            LEFT JOIN
+                attendence_tab a ON a.classroom_test_id = ct.id
+            WHERE
+                ct.id = ?;
         `;
 
         const [students] = await promisePool.execute(selectSql, [req.params.id]);
@@ -343,17 +350,20 @@ router.get('/:id/present-absent', authenticate(['staff']), async (req, res) => {
 router.get('/:id/marks', authenticate(['staff']), async (req, res) => {
     try {
         const selectSql = `
-        SELECT 
-            u.user_name,
-            SUM(tm.mark_awarded) AS total_marks
-        FROM 
-            test_marks tm
-        INNER JOIN 
-            users u ON tm.student_id = u.user_id
-        where 
-            test_id = ?
-        GROUP BY 
-            u.user_name;
+        select
+            u.user_name as user_name,
+            sum(cs.marks_awarded) AS total_marks
+        from
+            code_submissions cs
+        join
+            mcq_submissions ms
+        join
+            users u on cs.student_id = u.user_id
+        where
+            cs.classroom_test_id = ?
+        group by
+            u.user_name
+        ;
         `;
 
         const [marks] = await promisePool.execute(selectSql, [req.params.id]);
@@ -361,15 +371,21 @@ router.get('/:id/marks', authenticate(['staff']), async (req, res) => {
         const selectSql1 = `
         SELECT 
             AVG(total_marks) AS overall_average_marks
-        FROM 
-            (SELECT 
-                SUM(mark_awarded) AS total_marks
             FROM 
-                test_marks
+                (select
+                u.user_name,
+                sum(cs.marks_awarded) AS total_marks
+            from
+                code_submissions cs
+            join
+                mcq_submissions ms
+            join
+                users u on cs.student_id = u.user_id
             where
-                test_id = ?
-            GROUP BY 
-                student_id) AS subquery;
+                cs.classroom_test_id = ?
+            group by
+                u.user_name
+        ) AS subquery;
         `;
 
         const [averageMarks] = await promisePool.execute(selectSql1, [req.params.id]);
