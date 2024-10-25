@@ -21,6 +21,17 @@ logger.info("Info") / logger.error("Possible errors") / logger.debug("instead of
 
 # Best to know
 
+### Creating an Admin User
+```curl
+curl -X POST http://localhost:5000/api/auth/register -H "Content-Type: application/json" -d '{
+    "roll_no": "admin001",
+    "userName": "admin",
+    "email": "admin@example.com",
+    "password": "1234",
+    "role": "admin"
+}'
+```
+
 ### Judge0
 - [Judge0](https://ce.judge0.com/) is a free judge for running code snippets and we are using it for running code snippets through RapidAPI.
 - If hosting on it on our own configure the server's IP inside `./src/config/networking.js` file.

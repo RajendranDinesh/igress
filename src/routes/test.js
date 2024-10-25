@@ -202,7 +202,7 @@ router.post('/schedule', authenticate(['staff', 'admin']), async (req, res) => {
         const [result] = await connection.query(insertSql, [classroom_id, test_id, scheduled_at, req.userData.userId]);
 
         const supervisorInsert = `
-            INSERT INTO freedb_igress.test_supervisors
+            INSERT INTO test_supervisors
             (classroom_test_id, supervisor_id)
             VALUES (?, ?), (?, ?);
         `;
